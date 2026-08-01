@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "mode": "dry_run",
+  "paths": {
+    "project_root": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade",
+    "input_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\ship",
+    "output_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\ship_output",
+    "review_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\ship_review",
+    "logs_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\logs",
+    "presets_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\presets",
+    "temp_dir": "C:\\Path\\To\\FX3-SLog3-DaVinci-AutoGrade\\temp"
+  },
+  "safety": {
+    "input_is_read_only": true,
+    "allow_modify_move_delete_or_rename_input": false,
+    "allow_output_outside_output_dir": false,
+    "reject_output_tree_as_input": true,
+    "overwrite_existing_output": false,
+    "first_test_max_clips": 3,
+    "batch_size": 10
+  },
+  "source": {
+    "camera": "Sony FX3",
+    "input_color_space": "Sony S-Gamut3.Cine / S-Log3",
+    "require_reliable_metadata_confirmation": true,
+    "unknown_color_space_action": "stop_and_require_manual_confirmation",
+    "auto_apply_lut": false
+  },
+  "resolve": {
+    "version_verified": "20.3.2",
+    "edition_verified": "Free",
+    "required_interface": "internal_lua",
+    "create_isolated_project": true,
+    "project_name": "FX3_SLog3_AutoGrade_Test"
+  },
+  "color_management": {
+    "color_science": "DaVinci YRGB Color Managed",
+    "automatic_color_management": false,
+    "timeline_color_space": "DaVinci Wide Gamut / DaVinci Intermediate",
+    "output_color_space": "Rec.709 Gamma 2.4",
+    "timeline_resolution": "3840x2160",
+    "timeline_frame_rate": 59.94,
+    "playback_frame_rate": 59.94
+  },
+  "v2b": {
+    "node": 2,
+    "contrast": 1.12,
+    "pivot": 0.44,
+    "color_boost": 12.0,
+    "saturation": 54.0,
+    "highlights": -8.0,
+    "temperature": 0.0,
+    "tint": 0.0
+  },
+  "output": {
+    "suffix": "_Rec709_NeutralV2B",
+    "render_mode": "Individual Clips",
+    "container": "MP4",
+    "video_codec": "H.264",
+    "quality": "Best",
+    "audio_codec": "AAC",
+    "audio_channels": 2,
+    "audio_sample_rate": 48000
+  },
+  "confirmation": {
+    "batch_authorized": false,
+    "selected_test_clips": []
+  }
+}

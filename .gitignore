@@ -1,0 +1,55 @@
+# Raw camera media and sidecar metadata
+/ship/
+/ship_output/
+/ship_review/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.mxf
+*.MXF
+*.xml
+*.XML
+
+# Local runtime data
+/temp/
+/logs/
+/media_inventory.csv
+/SETUP_STATUS.md
+/config/*
+!/config/*.example.json
+!/config/*.example.txt
+/scripts/*.local.lua
+/.codex/
+/.agents/
+
+# Resolve caches, proxies, galleries, databases, and backups
+**/CacheClip/
+**/ProxyMedia/
+**/.gallery/
+**/Gallery/
+**/Resolve Project Backups/
+**/Resolve Disk Database/
+*.drp
+*.dra
+*.drb
+*.db
+*.db-shm
+*.db-wal
+*.cube
+*.log
+
+# Local tools and operating-system files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor state
+.idea/
+.vscode/
+*.swp
+*.swo

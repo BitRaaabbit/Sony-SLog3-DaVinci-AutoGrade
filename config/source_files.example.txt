@@ -1,0 +1,5 @@
+# Copy this file to source_files.txt, then replace the sample names.
+# Use one MP4 filename per line. Do not include paths or XML sidecars.
+FX3_TEST_001.MP4
+FX3_TEST_002.MP4
+FX3_TEST_003.MP4
