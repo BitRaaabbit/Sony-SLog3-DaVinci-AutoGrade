@@ -24,3 +24,7 @@ The local 4K50 preset was not visible in the actual `Project:GetPresetList()` re
 In the same installed Workspace Lua environment, `Resolve()` returned nil while `app:GetResolve()` returned a valid userdata. ProjectManager, CurrentProject, `OpenPage("edit")`, and `SaveProject()` succeeded.
 
 Lua `io.open` failed on an existing Windows directory containing Chinese characters and reported `No such file or directory`. Logging, reports, traceback, state, runtime profile, and temporary DRP staging therefore use `%TEMP%\SonySLog3AutoGrade`. Media paths remain unchanged and are passed directly to Resolve for an explicit ImportMedia test.
+
+## 2026-08-11 — Resolve Lua collection metadata
+
+The first blank-template capture stopped because a generic `pairs()` counter reported one entry each for `Folder:GetClipList()`, `Folder:GetSubFolderList()`, and `Project:GetRenderJobList()` while the Resolve GUI showed no media, subfolders, or render jobs. Resolve/Fusion's Lua bridge can expose internal collection metadata as top-level table keys, so the number of `pairs()` entries is not the number of real Resolve objects. Capture and Diagnostic now log every safe top-level key/type/value for evidence, then use list sequence semantics and validate each actual item type. No hard-coded subtraction is permitted.

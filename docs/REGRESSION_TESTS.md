@@ -16,6 +16,7 @@
 - **REG-014 — Bounded batch:** first test is at most three clips; each batch invocation is at most ten.
 - **REG-015 — Project Preset discovery gate:** before creating a diagnostic project or calling `Project:SetPreset()`, call `Project:GetPresetList()` on the current project, log its complete safely traversable structure, and prove the runtime `preset_name` is an exact visible candidate. Trimmed or case-insensitive matches are warnings only. A missing exact match stops before project creation.
 - **REG-016 — Private DRP bootstrap gate:** Template Capture must prove an empty Media Pool, zero timelines, an empty render queue, and exact Project Format readback before a collision-safe `ExportProject`. Diagnostic must import the private DRP under a new unique project name, repeat both blank-state and format validation, and stop before color management or media import on any mismatch. DRP files and real runtime paths never enter Git.
+- **REG-017 — Resolve Lua collection metadata:** Resolve/Fusion's internal Lua bridge may add metadata keys such as `__flags`, `__idxtokey`, `__keytoidx`, or future `__*` fields to tables returned by list APIs. A raw `pairs()` entry count must never be treated as the number of Resolve objects. Log the complete safe top-level structure for diagnosis, but count only validated sequence entries: userdata for Media Pool clips/folders and information tables with `JobId` for render jobs. Regression case: an empty GUI returned a naive top-level count of one for clips, folders, and render jobs.
 
 ## Release gate
 

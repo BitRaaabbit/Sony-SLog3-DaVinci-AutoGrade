@@ -93,10 +93,55 @@ local function numberEquals(value, expected)
     return number ~= nil and math.abs(number - expected) < 0.001
 end
 
-local function tableCount(value)
+local fail
+
+local function safeString(value)
+    local ok, result = pcall(function() return tostring(value) end)
+    return ok and result or "<tostring failed: " .. tostring(result) .. ">"
+end
+
+local function dumpRawCollection(label, value)
+    local prefix = string.lower(label):gsub("[^%w]+", "_")
+    logLine(label .. " RAW BEGIN")
+    logValue(prefix .. ".type", type(value))
+    if type(value) == "table" then
+        local index = 0
+        local iterateOk, iterateError = pcall(function()
+            for key, item in pairs(value) do
+                index = index + 1
+                local entry = prefix .. ".entry[" .. tostring(index) .. "]"
+                logValue(entry .. ".key_type", type(key))
+                logValue(entry .. ".key", safeString(key))
+                logValue(entry .. ".value_type", type(item))
+                logValue(entry .. ".value", safeString(item))
+                if type(key) == "string" and key:sub(1, 2) == "__" then
+                    logValue(entry .. ".classification", "BRIDGE_METADATA")
+                elseif type(key) == "number" then
+                    logValue(entry .. ".classification", "SEQUENCE_CANDIDATE")
+                else
+                    logValue(entry .. ".classification", "NON_SEQUENCE_AUXILIARY")
+                end
+            end
+        end)
+        logValue(prefix .. ".top_level_entry_count_diagnostic_only", index)
+        logValue(prefix .. ".iterate_ok", iterateOk)
+        if not iterateOk then logValue(prefix .. ".iterate_error", iterateError) end
+    else
+        logValue(prefix .. ".value", safeString(value))
+    end
+    logLine(label .. " RAW END")
+end
+
+local function validatedSequenceCount(value, validator, label)
+    if type(value) ~= "table" then fail(label .. " did not return a Lua table.") end
     local count = 0
-    if type(value) ~= "table" then return count end
-    for _, _ in pairs(value) do count = count + 1 end
+    for index, item in ipairs(value) do
+        local valid, reason = validator(item)
+        logValue(label .. ".sequence[" .. tostring(index) .. "].value_type", type(item))
+        logValue(label .. ".sequence[" .. tostring(index) .. "].validated", valid)
+        if not valid then fail(label .. " sequence entry is invalid: " .. tostring(reason)) end
+        count = count + 1
+    end
     return count
 end
 
@@ -119,7 +164,7 @@ local function tracebackHandler(errorValue)
     return message
 end
 
-local function fail(message)
+fail = function(message)
     append(state.errors, "stage=" .. state.stage .. " | " .. tostring(message))
     error(tostring(message), 0)
 end
@@ -212,11 +257,6 @@ local function acquireProjectManager(resolveObject)
         logLine("Current Project=NONE")
     end
     return manager, current
-end
-
-local function safeString(value)
-    local ok, result = pcall(function() return tostring(value) end)
-    return ok and result or "<tostring failed: " .. tostring(result) .. ">"
 end
 
 local function addPresetCandidate(candidates, seen, value)
@@ -461,9 +501,22 @@ local function validateBlankTemplateProject(project)
     local folders = root:GetSubFolderList() or {}
     local timelineCount = tonumber(project:GetTimelineCount()) or -1
     local renderJobs = project:GetRenderJobList() or {}
-    local clipCount = tableCount(clips)
-    local folderCount = tableCount(folders)
-    local renderJobCount = tableCount(renderJobs)
+    dumpRawCollection("CLIP LIST", clips)
+    dumpRawCollection("SUBFOLDER LIST", folders)
+    dumpRawCollection("RENDER JOB LIST", renderJobs)
+    local clipCount = validatedSequenceCount(clips, function(item)
+        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
+        return true
+    end, "clip_list")
+    local folderCount = validatedSequenceCount(folders, function(item)
+        if type(item) ~= "userdata" then return false, "expected Folder userdata" end
+        return true
+    end, "subfolder_list")
+    local renderJobCount = validatedSequenceCount(renderJobs, function(item)
+        if type(item) ~= "table" then return false, "expected render job information table" end
+        if tostring(item.JobId or "") == "" then return false, "missing JobId" end
+        return true
+    end, "render_job_list")
     logValue("template_blank.root_clip_count", clipCount)
     logValue("template_blank.root_folder_count", folderCount)
     logValue("template_blank.timeline_count", timelineCount)
