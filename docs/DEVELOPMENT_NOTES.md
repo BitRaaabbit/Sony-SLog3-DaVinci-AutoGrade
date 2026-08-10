@@ -11,7 +11,9 @@ An internal Resolve 20.3.2 Free diagnostic produced a complete ASCII-path log an
 
 The script stopped before MediaStorage, Unicode media-path testing, ImportMedia, Media Pool, timeline creation, SaveProject, ExportProject, or rendering. This proves that the media path and decoder were not involved in that failure.
 
-The failed implementation set Timeline FPS before Playback FPS. Resolve accepted the Timeline FPS change, then refused the Playback FPS change. The generic implementation establishes **Playback FPS first**, reads it back, and only then sets Timeline FPS. An inconsistent existing project is preserved; the workflow creates a fresh isolated project rather than deleting content or forcing a locked setting.
+The first failed implementation set Timeline FPS before Playback FPS. Resolve accepted the Timeline FPS change, then refused the Playback FPS change. A subsequent fresh-project test recorded untouched defaults of Playback 24, Timeline 24, and 1920×1080. `Project:SetSetting("timelinePlaybackFrameRate", value)` returned `false` for `"50"`, `"50.0"`, and `"50.000"`; every readback remained 24. The script stopped before resolution, color management, or media import.
+
+The installed Resolve 20.3.2 scripting README explicitly enumerates `timelineFrameRate` for `Project:SetSetting` but does not enumerate `timelinePlaybackFrameRate`. The generic diagnostic therefore treats Playback FPS as a read-before-import gate, not as a value to brute-force. It can optionally apply an explicitly named Resolve Project Preset that has already been verified to establish the target Playback FPS; otherwise it stops and requires a manually preconfigured fresh project. Inconsistent projects are preserved as fault evidence.
 
 ## 2026-08-10 — internal object and logging
 

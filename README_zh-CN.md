@@ -18,7 +18,7 @@
 
 ## 架构
 
-`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，验证同一批素材是否同分辨率、同帧率、同 Gamma/Primaries，创建或载入隔离项目，**先设置 Playback FPS，再设置 Timeline FPS**，配置固定 Sony 色彩管理，只导入清单第一条素材并创建单素材诊断时间线，保存项目后停在 Edit 页面。
+`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，验证同一批素材是否同分辨率、同帧率、同 Gamma/Primaries，创建或载入隔离项目，先记录未修改的初始设置并验证 Playback FPS，再设置官方明确支持写入的 Timeline FPS。Resolve 20.3.2 免费版可能只允许通过 `Project:SetSetting` 读取而不能写入 Playback FPS；若不匹配，诊断要求显式配置且事先验证过的 Resolve Project Preset（或人工预配置的全新项目），并在导入媒体前停止。通过门槛后，脚本配置固定 Sony 色彩管理，只导入清单第一条素材并创建单素材诊断时间线，保存项目后停在 Edit 页面。
 
 `Sony SLog3 AutoGrade.lua` 只有同时满足以下条件才允许运行：
 

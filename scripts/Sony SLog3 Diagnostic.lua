@@ -217,6 +217,7 @@ end
 local function recordInitialSettings(project)
     setStage("Project Settings / Initial State")
     logLine("INITIAL SETTINGS")
+    local initial = {}
     local keys = {
         "timelinePlaybackFrameRate",
         "timelineFrameRate",
@@ -228,7 +229,9 @@ local function recordInitialSettings(project)
         logValue("initial." .. key .. ".read_call_ok", readOk)
         logValue("initial." .. key .. ".read_back", actual)
         if not readOk then fail("Initial GetSetting failed for " .. key .. ": " .. tostring(actual)) end
+        initial[key] = actual
     end
+    return initial
 end
 
 local function setReadCompare(project, key, candidates, validator, label)
@@ -249,15 +252,41 @@ local function setReadCompare(project, key, candidates, validator, label)
     fail("SET/READ BACK/COMPARE failed for " .. label .. "; actual=" .. tostring(project:GetSetting(key)))
 end
 
-local function configureProject(project, profile)
+local function configureProject(project, profile, initial)
     local width = tonumber(profile.batch.width)
     local height = tonumber(profile.batch.height)
     local fps = tonumber(profile.batch.frame_rate)
     local fpsCandidates = frameRateCandidates(fps)
 
-    -- REG-011: playback must be set and verified before timeline frame rate.
-    setReadCompare(project, "timelinePlaybackFrameRate", fpsCandidates,
-        function(v) return numberEquals(v, fps) end, "Playback Frame Rate")
+    -- REG-011: Resolve 20.3.2 Free exposes Playback FPS for reading but rejected
+    -- Project:SetSetting for this key in a fresh project. Verify it first; an
+    -- explicitly named Resolve Project Preset is the only scripted fallback.
+    setStage("Project Settings / Playback Frame Rate Gate")
+    local playback = initial.timelinePlaybackFrameRate
+    logValue("playback_gate.initial", playback)
+    if not numberEquals(playback, fps) then
+        local presetName = tostring(profile.project.preset_name or "")
+        logValue("playback_gate.project_preset", presetName ~= "" and presetName or "NOT_CONFIGURED")
+        if presetName == "" then
+            fail("timelinePlaybackFrameRate is not writable through Project:SetSetting on this Resolve installation; a verified Project Preset or manually preconfigured fresh project is required.")
+        end
+        setStage("Project Preset")
+        local presetOk, presetResult = pcall(function() return project:SetPreset(presetName) end)
+        logValue("project_preset.name", presetName)
+        logValue("project_preset.call_ok", presetOk)
+        logValue("project_preset.return", presetResult)
+        local readOk, actual = pcall(function() return project:GetSetting("timelinePlaybackFrameRate") end)
+        logValue("project_preset.playback_read_call_ok", readOk)
+        logValue("project_preset.playback_read_back", actual)
+        logValue("project_preset.playback_compare", readOk and numberEquals(actual, fps) and "MATCH" or "MISMATCH")
+        if not (presetOk and presetResult == true and readOk and numberEquals(actual, fps)) then
+            fail("Configured Project Preset did not establish the required Playback Frame Rate.")
+        end
+    else
+        logLine("Playback Frame Rate Gate=MATCH")
+    end
+
+    -- timelineFrameRate is explicitly documented as writable by Resolve.
     setReadCompare(project, "timelineFrameRate", fpsCandidates,
         function(v) return numberEquals(v, fps) end, "Timeline Frame Rate")
     setReadCompare(project, "timelineResolutionWidth", {tostring(width)},
@@ -484,8 +513,8 @@ local function main()
     local profile = loadRuntimeProfile()
     local resolveObject = acquireResolve()
     local manager, project = acquireProject(resolveObject, profile)
-    recordInitialSettings(project)
-    configureProject(project, profile)
+    local initial = recordInitialSettings(project)
+    configureProject(project, profile, initial)
     verifyFinalSettings(project, profile)
     local mediaPool, clip, sourcePath = ensureOneClip(project, profile)
     setClipInput(project, clip)

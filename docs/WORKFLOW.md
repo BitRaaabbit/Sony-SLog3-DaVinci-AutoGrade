@@ -18,7 +18,7 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 2. loads and validates the runtime profile;
 3. acquires Resolve with `app:GetResolve()`;
 4. creates or loads the exact isolated project;
-5. sets Playback FPS before Timeline FPS and reads both back;
+5. records untouched initial settings and verifies Playback FPS before setting and reading back Timeline FPS;
 6. configures the fixed Sony S-Log3 color-managed transform;
 7. imports only the first declared source;
 8. creates one diagnostic timeline;
@@ -26,6 +26,8 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 10. opens Edit and stops.
 
 Do not continue if the diagnostic report contains an error.
+
+Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting("timelinePlaybackFrameRate", ...)` is called in a fresh empty project, even though the same key is readable. The installed official scripting README explicitly enumerates `timelineFrameRate` as writable but does not enumerate `timelinePlaybackFrameRate`. Do not brute-force additional values. If the initial Playback FPS differs, use a Resolve Project Preset that was manually verified in a disposable empty project and name it in the private runtime profile, or preconfigure a new empty project manually. The diagnostic must still read back the exact target before media import.
 
 ## 4. Compatibility and image review
 

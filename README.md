@@ -18,7 +18,7 @@ External scripting access is not required. The workflow does not install codecs,
 
 ## Design
 
-`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates or loads an isolated project, sets playback FPS **before** timeline FPS, applies the fixed Sony color-management transform, imports only the first declared source, creates one diagnostic timeline, saves the project, and stops on Edit.
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates or loads an isolated project, records the untouched initial settings, and verifies playback FPS before setting the documented timeline FPS property. Resolve 20.3.2 Free may expose playback FPS as read-only to `Project:SetSetting`; when it differs, the diagnostic requires an explicitly configured and previously verified Resolve Project Preset (or a manually preconfigured fresh project) and stops before media import. After the gate passes, it applies the fixed Sony color-management transform, imports only the first declared source, creates one diagnostic timeline, saves the project, and stops on Edit.
 
 `Sony SLog3 AutoGrade.lua` is gated behind all of the following:
 

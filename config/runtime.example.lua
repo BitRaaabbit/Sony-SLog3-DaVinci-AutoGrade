@@ -7,7 +7,10 @@ return {
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
-        allow_load_existing = true
+        allow_load_existing = false,
+        -- Optional. Use only after a Resolve Project Preset has been manually
+        -- verified to establish the required Playback FPS in a fresh project.
+        preset_name = ""
     },
     paths = {
         input_dir = "C:/Path/To/ReadOnlySource",
