@@ -8,8 +8,13 @@ return {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
         allow_load_existing = false,
-        -- Required. Select a human-verified Project Format preset matching the
-        -- confirmed batch resolution and frame rate; never guess this name.
+        -- Recommended compatibility path: capture a verified blank project as
+        -- a private DRP, then import it under the unique diagnostic name.
+        bootstrap_method = "drp_template",
+        template_path = "C:/ASCII/Path/To/Templates/SonySLog3_Format_Base.drp",
+        template_capture_project_name = "Sony_SLog3_Format_Template_Source",
+        -- Optional alternative when GetPresetList exposes an exact verified
+        -- preset. Ignored by the drp_template method.
         preset_name = ""
     },
     paths = {

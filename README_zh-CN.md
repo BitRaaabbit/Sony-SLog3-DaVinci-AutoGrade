@@ -18,7 +18,9 @@
 
 ## 架构
 
-`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，验证同一批素材是否同分辨率、同帧率、同 Gamma/Primaries，创建隔离项目并记录其未修改的初始设置，然后应用私有 runtime 精确指定、且经人工验证的 Project Format Preset。脚本立即读回 Playback FPS、Timeline FPS、宽度和高度，任一不匹配就停止。Project Format 与色彩管线严格分离：Preset 门槛通过后，脚本才配置并验证固定 Sony 色彩管理、只导入清单第一条素材、创建单素材诊断时间线、保存并停在 Edit 页面。
+`Sony SLog3 Template Capture.lua` 先验证当前 Resolve 项目完全为空，并读回 Playback FPS、Timeline FPS、宽度和高度；全部匹配后才将该项目导出为私有且不覆盖的 DRP。它不会修改任何项目设置。
+
+`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，并验证同批素材。推荐的 `drp_template` 引导方式会把私有空白 DRP 以唯一项目名导入，再次验证格式和空项目状态，任一不匹配立即停止。只有 `Project:GetPresetList()` 能精确暴露已验证 Preset 时，才可选择保留的 `preset` 引导方式。Project Format 与色彩管线严格分离：引导门槛通过后，脚本才配置并验证 Sony 色彩管理、只导入清单第一条素材、创建单素材诊断时间线、保存并停在 Edit 页面。
 
 `Sony SLog3 AutoGrade.lua` 只有同时满足以下条件才允许运行：
 
@@ -34,17 +36,17 @@
 
 ## 安装
 
-1. 将 `scripts/` 下两个 Lua 文件复制到：
+1. 将 `scripts/` 下三个 Lua 文件复制到：
 
    `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\`
 
-2. 先在 Resolve 中建立并确认与本批分辨率、帧率匹配的 Project Preset；再将 `config/runtime.example.lua` 复制为已忽略的 `config/runtime.local.lua`，填写其精确 `preset_name`、可靠确认的本地元数据和路径。
+2. 将 `config/runtime.example.lua` 复制为已忽略的 `config/runtime.local.lua`，填写可靠确认的本地元数据和路径，设置 `bootstrap_method = "drp_template"`，并指定私有、纯 ASCII 的 `template_path`。
 3. 将本地 profile 复制到：
 
    `%TEMP%\SonySLog3AutoGrade\runtime.lua`
 
-4. 在一个可丢弃的 Resolve 空项目内，仅运行一次 `Workspace > Scripts > Utility > Sony SLog3 Diagnostic`。
-5. 在任何调色或渲染前，先读取 `%TEMP%\SonySLog3AutoGrade\diagnostic.log` 和 `diagnostic_report.md`。
+4. 新建空 Resolve 项目，在导入素材前人工设置并确认本批分辨率、Timeline FPS 和 Playback FPS，然后只运行一次 `Workspace > Scripts > Utility > Sony SLog3 Template Capture`。先读取 `template_capture.log`，并将导出的 DRP 保持为本地私有文件。
+5. 只运行一次 `Workspace > Scripts > Utility > Sony SLog3 Diagnostic`。在任何调色或渲染前，先读取 `%TEMP%\SonySLog3AutoGrade\diagnostic.log` 和 `diagnostic_report.md`。
 
 Runtime profile 和日志使用纯 ASCII 路径，是因为 Resolve 内部 Lua 的 `io.open` 在 Windows Unicode 路径上可能失败。素材路径仍直接交给 Resolve API，不能因此假定中文素材路径无法导入。
 

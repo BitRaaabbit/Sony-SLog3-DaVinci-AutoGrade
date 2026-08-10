@@ -12,6 +12,9 @@ local EMERGENCY_LOG_PATH = TEMP_ROOT .. "/SonySLog3AutoGrade_emergency.log"
 local state = {
     status = "STARTING",
     stage = "bootstrap",
+    bootstrap_method = "UNKNOWN",
+    bootstrap_status = "NOT_STARTED",
+    template_path = "",
     project_name = "UNKNOWN",
     profile = {},
     settings = {},
@@ -90,6 +93,26 @@ local function numberEquals(value, expected)
     return number ~= nil and math.abs(number - expected) < 0.001
 end
 
+local function tableCount(value)
+    local count = 0
+    if type(value) ~= "table" then return count end
+    for _, _ in pairs(value) do count = count + 1 end
+    return count
+end
+
+local function fileSize(path)
+    local handle = io.open(path, "rb")
+    if not handle then return nil end
+    local size = handle:seek("end")
+    handle:close()
+    return size
+end
+
+local function fileExists(path)
+    local size = fileSize(path)
+    return size ~= nil
+end
+
 local function tracebackHandler(errorValue)
     local message = tostring(errorValue)
     if debug and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -114,7 +137,16 @@ local function loadRuntimeProfile()
     if tonumber(profile.schema_version) ~= 2 then fail("Unsupported runtime profile schema_version.") end
     if profile.mode ~= "diagnostic" then fail("Diagnostic script requires profile.mode='diagnostic'.") end
     if type(profile.project) ~= "table" or tostring(profile.project.name or "") == "" then fail("Missing project.name.") end
-    if tostring(profile.project.preset_name or "") == "" then fail("A verified project.preset_name is required for the Project Format baseline.") end
+    local bootstrapMethod = tostring(profile.project.bootstrap_method or "")
+    if bootstrapMethod ~= "preset" and bootstrapMethod ~= "drp_template" then
+        fail("project.bootstrap_method must be 'preset' or 'drp_template'.")
+    end
+    if bootstrapMethod == "preset" and tostring(profile.project.preset_name or "") == "" then
+        fail("preset bootstrap requires a verified project.preset_name.")
+    end
+    if bootstrapMethod == "drp_template" and tostring(profile.project.template_path or "") == "" then
+        fail("drp_template bootstrap requires project.template_path.")
+    end
     if type(profile.paths) ~= "table" then fail("Missing paths table.") end
     if type(profile.batch) ~= "table" then fail("Missing batch table.") end
     if type(profile.batch.source_files) ~= "table" or #profile.batch.source_files < 1 then fail("No source_files declared.") end
@@ -136,6 +168,9 @@ local function loadRuntimeProfile()
     if not profile.diagnostic or profile.diagnostic.first_clip_only ~= true then fail("diagnostic.first_clip_only must be true.") end
     if tostring(profile.diagnostic.timeline_name or "") == "" then fail("Missing diagnostic.timeline_name.") end
     state.profile = profile
+    state.bootstrap_method = bootstrapMethod
+    state.template_path = tostring(profile.project.template_path or "")
+    logValue("preflight.bootstrap_method", bootstrapMethod)
     logValue("preflight.width", profile.batch.width)
     logValue("preflight.height", profile.batch.height)
     logValue("preflight.frame_rate", profile.batch.frame_rate)
@@ -169,10 +204,13 @@ local function acquireProjectManager(resolveObject)
     setStage("Current Project")
     local current = manager:GetCurrentProject()
     logValue("current_project.return_type", type(current))
-    if not current then fail("GetCurrentProject returned nil; preset discovery requires an open project.") end
-    state.preset_discovery_project = tostring(current:GetName())
-    logValue("current_project.name", state.preset_discovery_project)
-    logLine("Current Project=SUCCESS")
+    if current then
+        state.preset_discovery_project = tostring(current:GetName())
+        logValue("current_project.name", state.preset_discovery_project)
+        logLine("Current Project=SUCCESS")
+    else
+        logLine("Current Project=NONE")
+    end
     return manager, current
 end
 
@@ -225,6 +263,7 @@ end
 
 local function discoverProjectPreset(project, profile)
     setStage("Project Preset Discovery")
+    if not project then fail("Preset discovery requires an open current project.") end
     local target = tostring(profile.project.preset_name)
     state.preset_target = target
     logValue("preset_target", target)
@@ -382,6 +421,93 @@ local function applyProjectPresetBaseline(project, profile)
         state.settings[key] = tostring(actual)
     end
     logLine("Project Preset=SUCCESS")
+    state.bootstrap_status = "PRESET_VALIDATED"
+end
+
+local function validateProjectFormat(project, profile, prefix)
+    local width = tonumber(profile.batch.width)
+    local height = tonumber(profile.batch.height)
+    local fps = tonumber(profile.batch.frame_rate)
+    local checks = {
+        {"timelinePlaybackFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineResolutionWidth", function(v) return tonumber(v) == width end},
+        {"timelineResolutionHeight", function(v) return tonumber(v) == height end}
+    }
+    logLine(string.upper(prefix) .. " FORMAT READ BACK")
+    for _, entry in ipairs(checks) do
+        local key, validator = entry[1], entry[2]
+        local readOk, actual = pcall(function() return project:GetSetting(key) end)
+        local matched = readOk and validator(actual)
+        logValue(prefix .. "." .. key .. ".read_call_ok", readOk)
+        logValue(prefix .. "." .. key .. ".read_back", actual)
+        logValue(prefix .. "." .. key .. ".compare", matched and "MATCH" or "MISMATCH")
+        if not matched then
+            logLine("TEMPLATE VALIDATION FAILED")
+            fail("Project Format mismatch for " .. key .. "; actual=" .. tostring(actual))
+        end
+        state.settings[key] = tostring(actual)
+    end
+    logLine(string.upper(prefix) .. " FORMAT=ALL MATCH")
+end
+
+local function validateBlankTemplateProject(project)
+    setStage("DRP Template Blank Validation")
+    local mediaPool = project:GetMediaPool()
+    if not mediaPool then fail("Imported template GetMediaPool returned nil.") end
+    local root = mediaPool:GetRootFolder()
+    if not root then fail("Imported template GetRootFolder returned nil.") end
+    local clips = root:GetClipList() or {}
+    local folders = root:GetSubFolderList() or {}
+    local timelineCount = tonumber(project:GetTimelineCount()) or -1
+    local renderJobs = project:GetRenderJobList() or {}
+    local clipCount = tableCount(clips)
+    local folderCount = tableCount(folders)
+    local renderJobCount = tableCount(renderJobs)
+    logValue("template_blank.root_clip_count", clipCount)
+    logValue("template_blank.root_folder_count", folderCount)
+    logValue("template_blank.timeline_count", timelineCount)
+    logValue("template_blank.render_job_count", renderJobCount)
+    if clipCount ~= 0 or folderCount ~= 0 then fail("Imported DRP template Media Pool is not empty.") end
+    if timelineCount ~= 0 then fail("Imported DRP template contains a timeline.") end
+    if renderJobCount ~= 0 then fail("Imported DRP template contains render jobs.") end
+    logLine("DRP Template Blank Validation=SUCCESS")
+end
+
+local function bootstrapFromDrp(manager, currentProject, profile)
+    setStage("DRP Template Preflight")
+    local templatePath = tostring(profile.project.template_path)
+    local target = tostring(profile.project.name)
+    local size = fileSize(templatePath)
+    logValue("drp_template.path", templatePath)
+    logValue("drp_template.size", size)
+    if not size or size <= 0 then fail("DRP template is missing or empty.") end
+    if profile.project.allow_create ~= true then fail("drp_template bootstrap requires allow_create=true.") end
+    if profile.project.allow_load_existing == true then fail("drp_template bootstrap requires allow_load_existing=false.") end
+    if projectExists(manager, target) then fail("Target project already exists; DRP import refused reuse.") end
+    if currentProject then
+        local saved = manager:SaveProject()
+        logValue("bootstrap_project.saved", saved)
+        if saved ~= true then fail("Could not save the current project before DRP import.") end
+    end
+
+    setStage("DRP Template Import")
+    local importOk, importResult = pcall(function() return manager:ImportProject(templatePath, target) end)
+    logValue("ImportProject.call_ok", importOk)
+    logValue("ImportProject.return", importResult)
+    if not (importOk and importResult == true) then fail("ProjectManager:ImportProject failed.") end
+    local project = manager:LoadProject(target)
+    logValue("LoadProject.return_type", type(project))
+    if not project then fail("Imported DRP project could not be loaded.") end
+    state.project_name = target
+    logLine("DRP Template Import=SUCCESS")
+
+    setStage("DRP Template Format Validation")
+    validateProjectFormat(project, profile, "drp_template")
+    validateBlankTemplateProject(project)
+    state.bootstrap_status = "DRP_TEMPLATE_VALIDATED"
+    logLine("DRP Template Bootstrap=SUCCESS")
+    return project
 end
 
 local function configureColorManagement(project)
@@ -554,12 +680,6 @@ local function ensureTimeline(project, mediaPool, clip, sourcePath, profile)
     logLine("Timeline=SUCCESS")
 end
 
-local function fileExists(path)
-    local handle = io.open(path, "rb")
-    if handle then handle:close(); return true end
-    return false
-end
-
 local function backupPath(projectName)
     local safeName = tostring(projectName):gsub("[^%w%._%-]", "_")
     local base = ASCII_DIR .. "/" .. safeName .. "_01_setup"
@@ -573,6 +693,9 @@ local function writeReport(tracebackText)
         "# Sony S-Log3 Diagnostic report", "",
         "- Status: `" .. state.status .. "`",
         "- Last stage: `" .. state.stage .. "`",
+        "- Bootstrap method: `" .. state.bootstrap_method .. "`",
+        "- Bootstrap status: `" .. state.bootstrap_status .. "`",
+        "- Template path: `" .. state.template_path .. "`",
         "- Project: `" .. state.project_name .. "`",
         "- Imported first source: `" .. state.imported_file .. "`",
         "- Timeline: `" .. state.timeline .. "`",
@@ -616,10 +739,18 @@ local function main()
     local profile = loadRuntimeProfile()
     local resolveObject = acquireResolve()
     local manager, currentProject = acquireProjectManager(resolveObject)
-    discoverProjectPreset(currentProject, profile)
-    local _, project = acquireProject(manager, profile)
-    recordInitialSettings(project)
-    applyProjectPresetBaseline(project, profile)
+    local project = nil
+    if profile.project.bootstrap_method == "preset" then
+        discoverProjectPreset(currentProject, profile)
+        local _, presetProject = acquireProject(manager, profile)
+        project = presetProject
+        recordInitialSettings(project)
+        applyProjectPresetBaseline(project, profile)
+    elseif profile.project.bootstrap_method == "drp_template" then
+        project = bootstrapFromDrp(manager, currentProject, profile)
+    else
+        fail("Unsupported bootstrap method after runtime validation.")
+    end
     configureColorManagement(project)
     verifyFinalSettings(project, profile)
     local mediaPool, clip, sourcePath = ensureOneClip(project, profile)

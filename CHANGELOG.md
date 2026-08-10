@@ -4,18 +4,20 @@
 
 ### Changed
 
-- Replaced the camera-specific three-script layout with one diagnostic script and one gated AutoGrade runner.
+- Replaced the camera-specific layout with a template-capture utility, one diagnostic script, and one gated AutoGrade runner.
 - Moved resolution, playback/timeline FPS, paths, project name, manifests, and authorization into a private runtime profile.
 - Removed the old V2B values as production defaults. The historical values (Contrast 1.120, Pivot 0.440, Color Boost 12, Saturation 54, Highlights -8) remain regression context only.
 - Added the Neutral Safe test-candidate policy without claiming permanent look parameters.
 - Added an Original Log → RCM Only → Neutral Safe → high-quality master → delivery codec display/LED diagnostic chain.
+- Added the private blank-DRP bootstrap as the recommended Project Format compatibility path; the exact-preset path remains optional.
 
 ### Fixed
 
 - Internal Resolve Free scripts now use the empirically verified `app:GetResolve()` path.
 - Logging now initializes under `%TEMP%\SonySLog3AutoGrade` with emergency fallback, `xpcall`, traceback, and stage markers.
-- Project Format setup now uses an exact runtime-selected, human-verified Resolve Project Preset and full readback. Fresh-project testing proved that `timelinePlaybackFrameRate` is readable but not writable through `Project:SetSetting()` in Resolve 20.3.2 Free on Windows.
+- Fresh-project testing proved that `timelinePlaybackFrameRate` is readable but not writable through `Project:SetSetting()` in Resolve 20.3.2 Free on Windows; Project Format now uses a verified private blank DRP by default and full readback after import.
 - Added a Project Preset discovery gate: log the complete safely traversable `Project:GetPresetList()` result and require an exact visible preset name before creating a fresh diagnostic project or calling `SetPreset()`.
+- Added strict blank-template capture and import gates using the documented `ExportProject(projectName, filePath, false)` and `ImportProject(filePath, projectName)` APIs, with full format readback and collision refusal.
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
 
 ### Safety

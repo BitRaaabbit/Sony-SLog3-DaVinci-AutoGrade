@@ -18,7 +18,9 @@ External scripting access is not required. The workflow does not install codecs,
 
 ## Design
 
-`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates an isolated project, records its untouched initial settings, and applies the exact human-verified Project Format preset named by the private runtime. It immediately reads back Playback FPS, Timeline FPS, width, and height and stops on any mismatch. Project Format and color are deliberately separate: only after the preset gate passes does the script configure and verify the fixed Sony color-management transform, import the first declared source, create one diagnostic timeline, save, and stop on Edit.
+`Sony SLog3 Template Capture.lua` exports a human-verified, completely blank Resolve project to a private, collision-safe DRP after checking Playback FPS, Timeline FPS, width, height, Media Pool, timelines, and render queue. It never changes project settings.
+
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile and validates one homogeneous batch. The recommended `drp_template` bootstrap imports the private blank DRP under a unique project name, rechecks its format and blank state, and stops on any mismatch. The optional `preset` bootstrap remains available only when `Project:GetPresetList()` exposes an exact verified preset. Project Format and color are deliberately separate: only after the bootstrap gate passes does the script configure and verify the fixed Sony color-management transform, import the first declared source, create one diagnostic timeline, save, and stop on Edit.
 
 `Sony SLog3 AutoGrade.lua` is gated behind all of the following:
 
@@ -34,17 +36,17 @@ The automation copies a verified reference grade. It does not encode permanent N
 
 ## Install
 
-1. Copy the two files under `scripts/` to:
+1. Copy the three files under `scripts/` to:
 
    `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\`
 
-2. In Resolve, create and verify a Project Preset matching the confirmed batch resolution and frame rate. Copy `config/runtime.example.lua` to the ignored `config/runtime.local.lua`, enter that exact `preset_name`, and replace all sample values with confirmed local metadata and paths.
+2. Copy `config/runtime.example.lua` to the ignored `config/runtime.local.lua`, replace all sample values with confirmed local metadata and paths, set `bootstrap_method = "drp_template"`, and select a private ASCII-only `template_path`.
 3. Copy the local profile to:
 
    `%TEMP%\SonySLog3AutoGrade\runtime.lua`
 
-4. Open a disposable Resolve project and run `Workspace > Scripts > Utility > Sony SLog3 Diagnostic` once.
-5. Read `%TEMP%\SonySLog3AutoGrade\diagnostic.log` and `diagnostic_report.md` before any grading or rendering.
+4. Create a new empty Resolve project, set and verify the batch resolution plus Timeline/Playback FPS before importing anything, then run `Workspace > Scripts > Utility > Sony SLog3 Template Capture` once. Read `template_capture.log` and keep the exported DRP private.
+5. Run `Workspace > Scripts > Utility > Sony SLog3 Diagnostic` once. Read `%TEMP%\SonySLog3AutoGrade\diagnostic.log` and `diagnostic_report.md` before any grading or rendering.
 
 The runtime profile is deliberately stored at an ASCII-only path because Resolve's internal Lua `io.open` may fail on Unicode Windows paths. Unicode media paths are still passed directly to Resolve APIs and must be tested rather than assumed unsupported.
 
