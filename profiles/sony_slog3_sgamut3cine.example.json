@@ -1,0 +1,11 @@
+{
+  "name": "Sony S-Gamut3.Cine / S-Log3",
+  "input_primaries": "Sony S-Gamut3.Cine",
+  "input_gamma": "S-Log3",
+  "timeline_primaries": "DaVinci Wide Gamut",
+  "timeline_gamma": "DaVinci Intermediate",
+  "output_primaries": "Rec.709",
+  "output_gamma": "Gamma 2.4",
+  "lut": false,
+  "camera_model_is_constraint": false
+}

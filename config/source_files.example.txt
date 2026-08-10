@@ -1,5 +1,5 @@
-# Copy this file to source_files.txt, then replace the sample names.
-# Use one MP4 filename per line. Do not include paths or XML sidecars.
-FX3_TEST_001.MP4
-FX3_TEST_002.MP4
-FX3_TEST_003.MP4
+# Copy to a local ignored manifest and replace these sanitized names.
+# Use one confirmed Sony S-Gamut3.Cine / S-Log3 media filename per line.
+SONY_SLOG3_CLIP_001.MP4
+SONY_SLOG3_CLIP_002.MP4
+SONY_SLOG3_CLIP_003.MP4

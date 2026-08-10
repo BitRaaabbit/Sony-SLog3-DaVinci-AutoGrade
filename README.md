@@ -1,97 +1,74 @@
-# FX3-SLog3-DaVinci-AutoGrade
+# Sony S-Log3 DaVinci AutoGrade
 
-[简体中文](README_zh-CN.md)
+A conservative, safety-first DaVinci Resolve workflow for media reliably confirmed as **Sony S-Gamut3.Cine / S-Log3**. Camera model is report metadata, not an eligibility rule.
 
-An internal-Lua workflow for conservative, repeatable conversion of confirmed Sony FX3 S-Gamut3.Cine / S-Log3 footage to Rec.709 Gamma 2.4 in DaVinci Resolve.
+This branch is a development refactor. Do not treat it as a stable production release until the regression gates in `docs/REGRESSION_TESTS.md` pass on real footage.
 
-The project favors verified color management over LUT guessing. It provides a three-clip compatibility test, an A/B neutral-grade comparison, and a maximum-ten-clips-per-run batch script. Raw media is treated as read-only and renders are confined to `ship_output`.
+## Verified host environment
 
-## Verified environment
-
-- Windows 11
-- DaVinci Resolve 20.3.2 Free
-- Sony FX3 / ILME-FX3
-- Sony S-Gamut3.Cine / S-Log3
-- HEVC Main 10, 3840×2160, 59.94p test footage
-- MP4/H.264 Individual Clips output with AAC stereo at 48 kHz
-
-Other Resolve versions may expose different setting labels or render capabilities. This project is not validated for other cameras, gamuts, gamma curves, frame rates, or codecs.
-
-## Default color pipeline
-
-- DaVinci YRGB Color Managed; automatic color management off
-- Input: Sony S-Gamut3.Cine / S-Log3
+- DaVinci Resolve 20.3.2 Free on Windows
+- Internal Lua launched from `Workspace > Scripts > Utility`
+- Internal Resolve object acquired with `app:GetResolve()`
+- DaVinci YRGB Color Managed, automatic color management off
 - Timeline: DaVinci Wide Gamut / DaVinci Intermediate
 - Output: Rec.709 Gamma 2.4
-- Timeline and playback: 59.94 fps
-- Resolution: 3840×2160
-- No LUT, auto exposure, auto white balance, temperature/tint correction, vignette, grain, skin processing, noise reduction, or extra sharpening
+- No LUT
 
-The approved V2B adjustment is a serial node 02 after the color-managed transform:
+External scripting access is not required. The workflow does not install codecs, plugins, LUTs, Python packages, or executables.
 
-| Parameter | Value |
-|---|---:|
-| Contrast | 1.120 |
-| Pivot | 0.440 |
-| Color Boost | 12.00 |
-| Saturation | 54.00 |
-| Highlights | -8.00 |
-| Temperature | 0.0 |
-| Tint | 0.00 |
+## Design
+
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates or loads an isolated project, sets playback FPS **before** timeline FPS, applies the fixed Sony color-management transform, imports only the first declared source, creates one diagnostic timeline, saves the project, and stops on Edit.
+
+`Sony SLog3 AutoGrade.lua` is gated behind all of the following:
+
+- a successful diagnostic project;
+- representative test selection;
+- a human-approved reference timeline;
+- explicit test or batch authorization;
+- explicit render-start authorization;
+- an empty render queue;
+- maximum three clips for a first test and ten clips per batch invocation.
+
+The automation copies a verified reference grade. It does not encode permanent Neutral Safe Primary values in code.
 
 ## Install
 
-1. Download or clone this project into a local folder. Paths containing Unicode characters and spaces are supported, but keep every path fully quoted in shell commands.
-2. Create local `ship`, `ship_output`, `ship_review`, `logs`, and `temp` directories. They are intentionally ignored by Git.
-3. Put only original camera MP4s and their optional metadata sidecars in `ship`. Never put generated output back into `ship`.
-4. Copy `config/autograde.example.json` to `config/autograde.json` and update local paths. The real config is ignored by Git.
-5. Copy `config/source_files.example.txt` to `config/source_files.txt` and list the approved MP4 filenames, one per line. Do not list XML files or paths.
-6. Set `FX3_AUTOGRADE_ROOT` before launching Resolve, or edit the public fallback `PROJECT_ROOT` near the top of the test and comparison Lua scripts.
-7. Copy each Lua template to a `*.local.lua` file under `scripts/` (these local copies are ignored by Git). Replace the three `FX3_TEST_00X.MP4` placeholders in the local test and comparison scripts with three confirmed filenames. In the local batch script, set `REFERENCE_TIMELINE` to `CMP_<first-clip-stem>_NeutralV2B`.
-8. Copy the three customized local Lua files to the Resolve Utility directory, optionally removing `.local` from their installed names:
+1. Copy the two files under `scripts/` to:
 
    `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\`
 
-9. Restart Resolve so the scripts appear under `Workspace > Scripts`.
+2. Copy `config/runtime.example.lua` to the ignored `config/runtime.local.lua` and replace all sample values with confirmed local metadata and paths.
+3. Copy the local profile to:
 
-## Run
+   `%TEMP%\SonySLog3AutoGrade\runtime.lua`
 
-1. Create or open an isolated empty project named `FX3_SLog3_AutoGrade_Test`. Do not reuse a production project.
-2. Before importing media or creating a timeline, set 3840×2160, Timeline Frame Rate 59.94, and Playback Frame Rate 59.94. Read both frame-rate values back.
-3. Run `Workspace > Scripts > FX3 Standard AutoGrade Test`. It processes only the three configured test clips. Stop immediately if HEVC Main 10 is Media Offline or audio-only.
-4. Review the three standard test renders manually.
-5. Run `FX3 Neutral Comparison` to create V2A and V2B comparison renders. Confirm the intended V2B reference timeline contains exactly two serial nodes.
-6. After explicit approval, run `FX3 Batch V2B`. Each invocation processes at most ten manifest entries. Confirm every render job is green, save the project, validate output frame rate and duration, then invoke the next batch.
-7. Stop after all manifest entries are complete. Never start a larger batch automatically.
+4. Open a disposable Resolve project and run `Workspace > Scripts > Utility > Sony SLog3 Diagnostic` once.
+5. Read `%TEMP%\SonySLog3AutoGrade\diagnostic.log` and `diagnostic_report.md` before any grading or rendering.
 
-## Minimum manual actions in Resolve Free
+The runtime profile is deliberately stored at an ASCII-only path because Resolve's internal Lua `io.open` may fail on Unicode Windows paths. Unicode media paths are still passed directly to Resolve APIs and must be tested rather than assumed unsupported.
 
-The verified free-edition workflow does not use an external Resolve scripting connection. The minimum manual work is:
+## Neutral Safe
 
-- create/select the isolated project;
-- set and read back resolution and both frame rates before media import;
-- restart Resolve after script installation;
-- choose each internal script from `Workspace > Scripts`;
-- visually confirm the first clip decodes correctly;
-- start or supervise the approved test/batch render and confirm green completion.
+Neutral Safe targets natural, clean event and documentary images without an obvious filter. Its candidate range is intentionally conservative: Contrast around 1.08, Pivot around 0.44, Color Boost 0–4, Saturation around 50, Highlights around -4, Temperature 0, Tint 0.
 
-The scripts obtain Resolve through the internal `app:GetResolve()` object. No UIManager integration, mouse-macro framework, image recognition, third-party plugin, or downloaded LUT is required.
+These are **test candidates**, not permanent defaults. A human must approve the reference timeline. Global warming, strong Color Boost, strong saturation, sharpening, Midtone Detail, clarity, grain, full-frame noise reduction, and style LUTs are disabled by policy.
 
-## Safety limits
+## Safety invariants
 
-- `ship` is read-only: never move, delete, overwrite, or rename source MP4/XML files.
-- Write rendered media only below `ship_output`; never treat that tree as input.
-- Do not overwrite existing output. Validate a complete same-name file before skipping it; use a timestamp or sequence for an incomplete retry.
-- Do not infer a camera or Log profile. If reliable metadata does not confirm Sony FX3 S-Gamut3.Cine / S-Log3, stop for human confirmation.
-- Do not import XML sidecars as media.
-- Do not install unknown packages, executables, LUTs, or plugins.
-- Test at most three clips before approving a batch; process at most ten clips per batch.
-- A failed clip must not cause successful outputs to be deleted.
+- Source media is read-only: never move, rename, delete, overwrite, or render back into the source tree.
+- Unknown or mixed gamma, primaries, frame rate, or resolution stops preflight.
+- Existing output is never silently overwritten.
+- A camera model never substitutes for reliable gamma/primaries confirmation.
+- Grading and delivery encoding are diagnosed separately.
+- Full batch processing requires a reviewed small-scale test.
 
-## Reports and privacy
+See [workflow](docs/WORKFLOW.md), [troubleshooting](docs/TROUBLESHOOTING.md), and [regression tests](docs/REGRESSION_TESTS.md).
 
-Only sanitized examples under `examples/` are publishable. Real inventories, logs, local configuration, media, Resolve databases, proxies, caches, and backups are excluded by `.gitignore`.
+## Compatibility
+
+This project is designed only for media confirmed as Sony S-Gamut3.Cine / S-Log3. It does not promise correct transforms for other cameras, gamuts, Log curves, raw formats, operating systems, or Resolve versions.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See `LICENSE`.

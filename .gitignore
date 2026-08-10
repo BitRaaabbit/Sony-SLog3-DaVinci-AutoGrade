@@ -19,7 +19,9 @@
 /config/*
 !/config/*.example.json
 !/config/*.example.txt
+!/config/*.example.lua
 /scripts/*.local.lua
+/config/*.local.lua
 /.codex/
 /.agents/
 
