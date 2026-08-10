@@ -15,6 +15,7 @@
 - Internal Resolve Free scripts now use the empirically verified `app:GetResolve()` path.
 - Logging now initializes under `%TEMP%\SonySLog3AutoGrade` with emergency fallback, `xpcall`, traceback, and stage markers.
 - Project Format setup now uses an exact runtime-selected, human-verified Resolve Project Preset and full readback. Fresh-project testing proved that `timelinePlaybackFrameRate` is readable but not writable through `Project:SetSetting()` in Resolve 20.3.2 Free on Windows.
+- Added a Project Preset discovery gate: log the complete safely traversable `Project:GetPresetList()` result and require an exact visible preset name before creating a fresh diagnostic project or calling `SetPreset()`.
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
 
 ### Safety

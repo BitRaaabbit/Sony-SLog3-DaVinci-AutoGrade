@@ -14,6 +14,7 @@
 - **REG-012 — Homogeneous color science:** mixed/unknown gamma or primaries stops preflight; no automatic LUT guessing.
 - **REG-013 — Reference-grade integrity:** AutoGrade requires an approved reference timeline and exact node count.
 - **REG-014 — Bounded batch:** first test is at most three clips; each batch invocation is at most ten.
+- **REG-015 — Project Preset discovery gate:** before creating a diagnostic project or calling `Project:SetPreset()`, call `Project:GetPresetList()` on the current project, log its complete safely traversable structure, and prove the runtime `preset_name` is an exact visible candidate. Trimmed or case-insensitive matches are warnings only. A missing exact match stops before project creation.
 
 ## Release gate
 

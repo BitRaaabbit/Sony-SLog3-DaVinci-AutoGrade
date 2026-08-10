@@ -18,6 +18,8 @@ A real diagnostic set Timeline FPS first, after which `timelinePlaybackFrameRate
 
 The installed official scripting README enumerates `timelineFrameRate` as writable but not `timelinePlaybackFrameRate`. Do not keep trying undocumented values. Select an exact, human-verified Project Format preset in the private runtime; the diagnostic calls `Project:SetPreset()` and immediately reads back Playback FPS, Timeline FPS, width, and height. A missing preset, `false` return, or mismatch stops before color management or import. Different confirmed formats need different verified presets; no preset name is universal. Preserve inconsistent projects as fault evidence.
 
+If `Project:SetPreset()` returns `false`, do not try alternative names. First inspect the preceding `PRESET LIST BEGIN` / `PRESET LIST END` block. The diagnostic logs the `Project:GetPresetList()` return type and complete safely traversable table structure before it creates a new project. `TARGET PRESET = NOT VISIBLE TO API` means no exact candidate was exposed; trim-only or case-insensitive matches are warnings and cannot authorize `SetPreset`.
+
 ## ImportMedia returns no clip
 
 Stop immediately. Record the requested path, `pcall` status, return type, and Media Pool contents. Do not install codecs, transcode, move source files, or import the rest of the batch.

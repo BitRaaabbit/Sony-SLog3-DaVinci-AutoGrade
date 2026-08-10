@@ -17,8 +17,8 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 1. initializes ASCII logging;
 2. loads and validates the runtime profile;
 3. acquires Resolve with `app:GetResolve()`;
-4. creates or loads the exact isolated project;
-5. records untouched initial settings, applies the exact verified Project Format preset declared by the runtime, and reads back Playback FPS, Timeline FPS, width, and height;
+4. calls `Project:GetPresetList()` on the current project, logs the complete safely traversable return structure, and requires an exact visible match for runtime `preset_name`;
+5. only after discovery passes, creates or loads the exact isolated project, records untouched initial settings, applies the exact verified Project Format preset, and reads back Playback FPS, Timeline FPS, width, and height;
 6. only after that gate passes, configures and reads back the fixed Sony S-Log3 color-managed transform;
 7. imports only the first declared source;
 8. creates one diagnostic timeline;
@@ -28,6 +28,8 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 Do not continue if the diagnostic report contains an error.
 
 Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting("timelinePlaybackFrameRate", ...)` is called in a fresh empty project, even though the same key is readable. `Project:GetSetting()` therefore does not imply that the corresponding property is writable through `Project:SetSetting()`. Do not brute-force additional values. Create and manually verify a Project Format preset for each confirmed format that is actually needed (for example 4K50, 4K59.94, 4K25, or 1080p50), declare its exact name in the private runtime, call the documented `Project:SetPreset()`, and read back all four format values. A missing preset, failed API return, or mismatch stops before color management and media import. Presets establish only Project Format; the script continues to own and verify the color pipeline separately.
+
+Runtime configuration is not proof that a preset exists. Before creating another empty diagnostic project, the workflow calls `Project:GetPresetList()` on the current project and records the API return type, every safely traversable table key/value/type, and extracted preset-name candidates. Only an exact candidate match permits project creation and `SetPreset`. Trimmed and case-insensitive matches are diagnostic warnings and are never selected automatically.
 
 ## 4. Compatibility and image review
 

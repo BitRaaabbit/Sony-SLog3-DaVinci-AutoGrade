@@ -18,6 +18,11 @@ local state = {
     imported_file = "",
     timeline = "",
     drp_path = "",
+    preset_return_type = "NOT_CALLED",
+    preset_discovery_project = "UNKNOWN",
+    preset_target = "",
+    preset_target_status = "NOT_CHECKED",
+    visible_presets = {},
     warnings = {},
     errors = {}
 }
@@ -72,6 +77,7 @@ logLine("scope=preflight plus one source clip; no grading or rendering")
 local function setStage(name) state.stage = name; logLine("STAGE=" .. name) end
 local function logValue(name, value) logLine(name .. "=" .. tostring(value)) end
 local function normalize(value) return string.lower((tostring(value or ""):gsub("%s+", ""))) end
+local function trim(value) return (tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
 local function compact(value) return string.lower((tostring(value or ""):gsub("[^%w]", ""))) end
 local function contains(value, token) return string.find(normalize(value), normalize(token), 1, true) ~= nil end
 local function pathKey(value) return string.lower(tostring(value or ""):gsub("\\", "/")) end
@@ -155,6 +161,118 @@ local function acquireResolve()
     return resolveObject
 end
 
+local function acquireProjectManager(resolveObject)
+    setStage("ProjectManager")
+    local manager = resolveObject:GetProjectManager()
+    if not manager then fail("GetProjectManager returned nil.") end
+    logLine("ProjectManager=SUCCESS")
+    setStage("Current Project")
+    local current = manager:GetCurrentProject()
+    logValue("current_project.return_type", type(current))
+    if not current then fail("GetCurrentProject returned nil; preset discovery requires an open project.") end
+    state.preset_discovery_project = tostring(current:GetName())
+    logValue("current_project.name", state.preset_discovery_project)
+    logLine("Current Project=SUCCESS")
+    return manager, current
+end
+
+local function safeString(value)
+    local ok, result = pcall(function() return tostring(value) end)
+    return ok and result or "<tostring failed: " .. tostring(result) .. ">"
+end
+
+local function addPresetCandidate(candidates, seen, value)
+    if type(value) ~= "string" or seen[value] then return end
+    seen[value] = true
+    candidates[#candidates + 1] = value
+end
+
+local function dumpPresetTable(value, path, depth, visited, candidates, candidateSeen)
+    if visited[value] then logLine(path .. ".cycle=ALREADY_VISITED"); return true end
+    visited[value] = true
+    local entries = {}
+    local iterateOk, iterateError = pcall(function()
+        for key, item in pairs(value) do entries[#entries + 1] = {key = key, value = item} end
+    end)
+    logValue(path .. ".entry_count", #entries)
+    logValue(path .. ".iterate_ok", iterateOk)
+    if not iterateOk then logValue(path .. ".iterate_error", iterateError); return false end
+    for index, entry in ipairs(entries) do
+        local key, item = entry.key, entry.value
+        local itemPath = path .. ".entry[" .. tostring(index) .. "]"
+        logValue(itemPath .. ".key_type", type(key))
+        logValue(itemPath .. ".key", safeString(key))
+        logValue(itemPath .. ".value_type", type(item))
+        if type(item) == "table" then
+            logValue(itemPath .. ".value", "<table>")
+        else
+            logValue(itemPath .. ".value", safeString(item))
+        end
+
+        if depth == 1 and type(item) == "string" then addPresetCandidate(candidates, candidateSeen, item) end
+        if depth == 1 and type(key) == "string" and type(item) == "table" then addPresetCandidate(candidates, candidateSeen, key) end
+        local compactKey = type(key) == "string" and compact(key) or ""
+        if type(item) == "string" and (compactKey == "name" or compactKey == "presetname") then
+            addPresetCandidate(candidates, candidateSeen, item)
+        end
+        if type(item) == "table" then
+            local nestedOk = dumpPresetTable(item, itemPath .. ".table", depth + 1, visited, candidates, candidateSeen)
+            if not nestedOk then return false end
+        end
+    end
+    return true
+end
+
+local function discoverProjectPreset(project, profile)
+    setStage("Project Preset Discovery")
+    local target = tostring(profile.project.preset_name)
+    state.preset_target = target
+    logValue("preset_target", target)
+    local callOk, result = pcall(function() return project:GetPresetList() end)
+    state.preset_return_type = type(result)
+    logValue("GetPresetList.call_ok", callOk)
+    logValue("GetPresetList.return_type", type(result))
+    logLine("PRESET LIST BEGIN")
+    if not callOk then
+        logValue("GetPresetList.error", result)
+        logLine("PRESET LIST END")
+        fail("Project:GetPresetList raised an error.")
+    end
+    if type(result) ~= "table" then
+        logValue("GetPresetList.value", safeString(result))
+        logLine("PRESET LIST END")
+        fail("Project:GetPresetList did not return a table.")
+    end
+
+    local candidates, candidateSeen = {}, {}
+    local dumpOk = dumpPresetTable(result, "preset_list", 1, {}, candidates, candidateSeen)
+    for _, name in ipairs(candidates) do append(state.visible_presets, name) end
+    logValue("preset_candidate_count", #candidates)
+    for index, name in ipairs(candidates) do logValue("preset_candidate[" .. index .. "]", name) end
+    logLine("PRESET LIST END")
+    if not dumpOk then fail("Project:GetPresetList returned a table that could not be safely traversed.") end
+
+    local exact, trimmed, caseInsensitive = false, false, false
+    for _, name in ipairs(candidates) do
+        if name == target then exact = true end
+        if trim(name) == trim(target) then trimmed = true end
+        if string.lower(trim(name)) == string.lower(trim(target)) then caseInsensitive = true end
+    end
+    logValue("preset_match.exact", exact)
+    logValue("preset_match.trimmed", trimmed)
+    logValue("preset_match.case_insensitive", caseInsensitive)
+    if not exact then
+        state.preset_target_status = "NOT_VISIBLE_TO_API"
+        if trimmed then append(state.warnings, "Target preset has only a trim-normalized diagnostic match; it was not selected.") end
+        if caseInsensitive then append(state.warnings, "Target preset has only a case-insensitive diagnostic match; it was not selected.") end
+        logLine("TARGET PRESET = NOT VISIBLE TO API")
+        fail("TARGET PRESET = NOT VISIBLE TO API")
+    end
+    state.preset_target_status = "EXACT_MATCH"
+    logLine("TARGET PRESET = EXACT MATCH")
+    logLine("Project Preset Discovery=SUCCESS")
+end
+
 local function projectExists(manager, name)
     for _, projectName in ipairs(manager:GetProjectListInCurrentFolder() or {}) do
         if projectName == name then return true end
@@ -162,11 +280,7 @@ local function projectExists(manager, name)
     return false
 end
 
-local function acquireProject(resolveObject, profile)
-    setStage("ProjectManager")
-    local manager = resolveObject:GetProjectManager()
-    if not manager then fail("GetProjectManager returned nil.") end
-    logLine("ProjectManager=SUCCESS")
+local function acquireProject(manager, profile)
     setStage("Project")
     local target = profile.project.name
     local current = manager:GetCurrentProject()
@@ -463,8 +577,18 @@ local function writeReport(tracebackText)
         "- Imported first source: `" .. state.imported_file .. "`",
         "- Timeline: `" .. state.timeline .. "`",
         "- DRP staging: `" .. state.drp_path .. "`", "",
-        "## Settings read back", ""
+        "## Project Preset discovery", "",
+        "- Discovery project: `" .. state.preset_discovery_project .. "`",
+        "- GetPresetList return type: `" .. state.preset_return_type .. "`",
+        "- Target preset: `" .. state.preset_target .. "`",
+        "- Target status: `" .. state.preset_target_status .. "`",
+        "- Visible preset candidates:", ""
     }
+    if #state.visible_presets == 0 then append(lines, "  - None") end
+    for _, name in ipairs(state.visible_presets) do append(lines, "  - `" .. name .. "`") end
+    append(lines, "")
+    append(lines, "## Settings read back")
+    append(lines, "")
     local keys = {}
     for key, _ in pairs(state.settings) do append(keys, key) end
     table.sort(keys)
@@ -491,7 +615,9 @@ end
 local function main()
     local profile = loadRuntimeProfile()
     local resolveObject = acquireResolve()
-    local manager, project = acquireProject(resolveObject, profile)
+    local manager, currentProject = acquireProjectManager(resolveObject)
+    discoverProjectPreset(currentProject, profile)
+    local _, project = acquireProject(manager, profile)
     recordInitialSettings(project)
     applyProjectPresetBaseline(project, profile)
     configureColorManagement(project)

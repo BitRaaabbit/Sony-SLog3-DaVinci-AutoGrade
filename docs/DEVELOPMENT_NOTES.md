@@ -15,6 +15,8 @@ The first failed implementation set Timeline FPS before Playback FPS. Resolve ac
 
 The installed Resolve 20.3.2 scripting README explicitly enumerates `timelineFrameRate` for `Project:SetSetting` but does not enumerate `timelinePlaybackFrameRate`. A property returned by `Project:GetSetting()` must not be assumed writable through `Project:SetSetting()`. The compatibility boundary is now: human-verified Project Format preset → exact runtime `preset_name` → documented `Project:SetPreset()` → full Playback/Timeline/width/height readback → immediate stop on mismatch. Preset names are format-specific local configuration, never a hard-coded universal Sony default. Color management remains a separate scripted and verified stage. Inconsistent projects are preserved as fault evidence.
 
+Runtime text is also not evidence that Resolve exposes the named preset to scripting. A failed exact `Project:SetPreset()` call led to the Project Preset discovery gate: query `Project:GetPresetList()` on the already open project, preserve its complete safely traversable structure in the log, extract only defensible name candidates, and require an exact match before creating another diagnostic project. Trimmed or case-insensitive matches never authorize selection.
+
 ## 2026-08-10 — internal object and logging
 
 In the same installed Workspace Lua environment, `Resolve()` returned nil while `app:GetResolve()` returned a valid userdata. ProjectManager, CurrentProject, `OpenPage("edit")`, and `SaveProject()` succeeded.
