@@ -57,6 +57,7 @@ local function loadProfile()
     if normalize(p.batch.gamma)~=normalize("S-Log3") or normalize(p.batch.primaries)~=normalize("Sony S-Gamut3.Cine") then
         fail("Source is not confirmed Sony S-Gamut3.Cine / S-Log3.")
     end
+    if p.batch.homogeneous_metadata_verified~=true then fail("Batch homogeneity was not explicitly verified.")end
     if not p.look or p.look.approved~=true or tostring(p.look.reference_timeline or "")=="" then
         fail("A human-approved reference_timeline is required; Neutral Safe has no permanent built-in parameters.")
     end
@@ -113,22 +114,39 @@ local function importClip(project,fullPath)
     if not clip then fail("ImportMedia failed: "..fullPath)end
     return clip
 end
-local function verifyClipInput(project,clip)
-    local key="Input Color Space"
-    for propertyKey,_ in pairs(clip:GetClipProperty()or{})do
-        if contains(propertyKey,"input")and contains(propertyKey,"color")and contains(propertyKey,"space")then key=propertyKey;break end
+local function verifyClipInput(project,clip,p)
+    local evidence={}
+    local function collect(source,actual)
+        local text=tostring(actual or ""); value("clip_input."..source,text)
+        if text~=""and normalize(text)~="project"and text~="项目"then evidence[#evidence+1]=text end
     end
-    local actual=clip:GetClipProperty(key)
-    local valid=contains(actual,"s-gamut3.cine")and contains(actual,"s-log3")
-    local inherited=(normalize(actual)=="project"or tostring(actual)=="项目")
-        and contains(project:GetSetting("colorSpaceInput"),"s-gamut3.cine")
+    local directOk,direct=pcall(function()return clip:GetClipProperty("Input Color Space")end)
+    value("clip_input.direct.call_ok",directOk);if directOk then collect("direct",direct)end
+    local snapshotOk,properties=pcall(function()return clip:GetClipProperty()end)
+    value("clip_input.snapshot.call_ok",snapshotOk)
+    if snapshotOk and type(properties)=="table"then
+        for key,actual in pairs(properties)do
+            if type(key)=="string"and key:sub(1,2)~="__"and contains(key,"input")and contains(key,"color")and contains(key,"space")then
+                collect("snapshot",actual)
+            end
+        end
+    end
+    for _,actual in ipairs(evidence)do
+        if not(contains(actual,"s-gamut3.cine")and contains(actual,"s-log3"))then
+            fail("Per-clip Input Color Space conflicts with the verified batch for "..tostring(clip:GetName()))
+        end
+    end
+    if #evidence>0 then value("clip_input.policy","EXPLICIT_CLIP_MATCH");return end
+    local metadataVerified=tostring(p.batch.metadata_confirmation or "")~=""
+        and p.batch.homogeneous_metadata_verified==true
+        and normalize(p.batch.gamma)==normalize("S-Log3")
+        and normalize(p.batch.primaries)==normalize("Sony S-Gamut3.Cine")
+    local projectVerified=contains(project:GetSetting("colorSpaceInput"),"s-gamut3.cine")
         and contains(project:GetSetting("colorSpaceInputGamma"),"s-log3")
-    if valid or inherited then return end
-    for _,label in ipairs({"S-Gamut3.Cine/S-Log3","Sony S-Gamut3.Cine/S-Log3","Sony S-Gamut3.Cine / S-Log3"})do
-        clip:SetClipProperty(key,label);actual=clip:GetClipProperty(key)
-        if contains(actual,"s-gamut3.cine")and contains(actual,"s-log3")then return end
-    end
-    fail("Effective Input Color Space could not be verified for "..tostring(clip:GetName()))
+        and(tostring(project:GetSetting("isAutoColorManage"))=="0"or normalize(project:GetSetting("isAutoColorManage"))=="false")
+    if not metadataVerified or not projectVerified then fail("Effective Input Color Space is unverified for "..tostring(clip:GetName()))end
+    append(state.warnings,"Per-clip Input Color Space is unavailable for "..tostring(clip:GetName()).."; using verified homogeneous metadata plus verified project input.")
+    value("clip_input.policy","VERIFIED_PROJECT_DEFAULT")
 end
 local function findTimeline(project,name)
     for i=1,project:GetTimelineCount()do local t=project:GetTimelineByIndex(i);if t and t:GetName()==name then return t end end
@@ -171,7 +189,7 @@ local function createTargets(project,p,files)
     local entries={};local inputRoot=tostring(p.paths.input_dir):gsub("[\\/]$","")
     for _,name in ipairs(files)do
         local fullPath=inputRoot.."/"..name;local clip=importClip(project,fullPath)
-        verifyClipInput(project,clip)
+        verifyClipInput(project,clip,p)
         local timelineName="AUTO_"..stem(name).."_"..tostring(p.look.name or "NeutralSafe"):gsub("[^%w]","")
         local timeline=findTimeline(project,timelineName)
         if not timeline then timeline=project:GetMediaPool():CreateTimelineFromClips(timelineName,{clip})end

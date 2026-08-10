@@ -30,6 +30,12 @@ Read `%TEMP%\SonySLog3AutoGrade\template_capture.log`. The current project must 
 
 Stop immediately. Record the requested path, `pcall` status, return type, and Media Pool contents. Do not install codecs, transcode, move source files, or import the rest of the batch.
 
+## Per-clip Input Color Space is empty
+
+The installed Resolve 20.3.2 README documents generic `GetClipProperty` and `SetClipProperty` methods, warns that some properties may be read-only or unavailable by context, and does not specifically enumerate Input Color Space as writable. Do not guess property aliases or keep calling `SetClipProperty` when readback is empty.
+
+Treat clip API visibility separately from project color management. A non-empty explicit Sony S-Gamut3.Cine / S-Log3 clip value is `EXPLICIT_CLIP_MATCH`; any explicit different value is `INPUT_UNVERIFIED` and stops. An empty or unavailable value can be `VERIFIED_PROJECT_DEFAULT` only when the runtime explicitly declares `homogeneous_metadata_verified=true`, confirmed gamma/primaries are Sony S-Gamut3.Cine / S-Log3, project input gamut/gamma read back correctly, automatic color management is off, and no clip override evidence is exposed. The report must retain the API warning and confidence basis.
+
 ## Display artifacts
 
 - RCM Only already abnormal: inspect source LED/moire/chroma noise revealed by normal Rec.709 contrast.

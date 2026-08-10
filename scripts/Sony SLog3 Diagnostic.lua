@@ -21,6 +21,14 @@ local state = {
     imported_file = "",
     timeline = "",
     drp_path = "",
+    source_metadata_status = "NOT_VERIFIED",
+    batch_homogeneity = "NOT_VERIFIED",
+    project_input_color_space = "UNKNOWN",
+    project_input_gamma = "UNKNOWN",
+    per_clip_input_api = "NOT_CHECKED",
+    per_clip_input_value = "",
+    effective_input_policy = "INPUT_UNVERIFIED",
+    input_confidence = "NONE",
     preset_return_type = "NOT_CALLED",
     preset_discovery_project = "UNKNOWN",
     preset_target = "",
@@ -192,6 +200,13 @@ local function loadRuntimeProfile()
     if bootstrapMethod == "drp_template" and tostring(profile.project.template_path or "") == "" then
         fail("drp_template bootstrap requires project.template_path.")
     end
+    if profile.project.resume_existing_diagnostic == true then
+        if bootstrapMethod ~= "drp_template" then fail("Existing diagnostic resume requires drp_template bootstrap.") end
+        if profile.project.allow_load_existing ~= true then fail("Existing diagnostic resume requires allow_load_existing=true.") end
+        if profile.project.allow_create ~= false then fail("Existing diagnostic resume requires allow_create=false.") end
+    elseif bootstrapMethod == "drp_template" and profile.project.allow_load_existing == true then
+        fail("allow_load_existing=true requires resume_existing_diagnostic=true.")
+    end
     if type(profile.paths) ~= "table" then fail("Missing paths table.") end
     if type(profile.batch) ~= "table" then fail("Missing batch table.") end
     if type(profile.batch.source_files) ~= "table" or #profile.batch.source_files < 1 then fail("No source_files declared.") end
@@ -201,6 +216,9 @@ local function loadRuntimeProfile()
     if normalize(profile.batch.gamma) ~= normalize("S-Log3") then fail("Batch gamma is not reliably confirmed as S-Log3.") end
     if normalize(profile.batch.primaries) ~= normalize("Sony S-Gamut3.Cine") then fail("Batch primaries are not reliably confirmed as Sony S-Gamut3.Cine.") end
     if tostring(profile.batch.metadata_confirmation or "") == "" then fail("metadata_confirmation is required.") end
+    if profile.batch.homogeneous_metadata_verified ~= true then
+        fail("homogeneous_metadata_verified must be explicitly true for the declared batch.")
+    end
     if tostring(profile.paths.input_dir or "") == "" or tostring(profile.paths.output_dir or "") == "" then fail("Input/output paths are required.") end
     if pathKey(profile.paths.input_dir) == pathKey(profile.paths.output_dir) then fail("Input and output directories must differ.") end
     local seen = {}
@@ -213,6 +231,8 @@ local function loadRuntimeProfile()
     if not profile.diagnostic or profile.diagnostic.first_clip_only ~= true then fail("diagnostic.first_clip_only must be true.") end
     if tostring(profile.diagnostic.timeline_name or "") == "" then fail("Missing diagnostic.timeline_name.") end
     state.profile = profile
+    state.source_metadata_status = "VERIFIED"
+    state.batch_homogeneity = "VERIFIED"
     state.bootstrap_method = bootstrapMethod
     state.template_path = tostring(profile.project.template_path or "")
     logValue("preflight.bootstrap_method", bootstrapMethod)
@@ -646,6 +666,71 @@ local function findExactClip(clips, expectedPath)
     return nil
 end
 
+local function resumeExistingDiagnostic(manager, currentProject, profile)
+    setStage("Existing Diagnostic Resume")
+    local target = tostring(profile.project.name)
+    if profile.project.resume_existing_diagnostic ~= true then fail("Existing diagnostic resume was not explicitly authorized.") end
+    if profile.project.allow_create ~= false or profile.project.allow_load_existing ~= true then
+        fail("Existing diagnostic resume safety flags are invalid.")
+    end
+    if not projectExists(manager, target) then fail("Explicit resume target does not exist; fresh project creation is disabled.") end
+
+    local project = currentProject
+    if not project or tostring(project:GetName()) ~= target then
+        if project then
+            local saved = manager:SaveProject()
+            logValue("resume_previous_project.saved", saved)
+            if saved ~= true then fail("Could not save the current project before loading the resume target.") end
+        end
+        project = manager:LoadProject(target)
+    end
+    logValue("resume_project.return_type", type(project))
+    if not project or tostring(project:GetName()) ~= target then fail("Exact existing diagnostic project could not be loaded.") end
+    state.project_name = target
+
+    setStage("Existing Diagnostic Format Validation")
+    validateProjectFormat(project, profile, "resume_existing")
+
+    setStage("Existing Diagnostic Content Validation")
+    local mediaPool, root, clips = rootObjects(project)
+    local folders = root:GetSubFolderList() or {}
+    local renderJobs = project:GetRenderJobList() or {}
+    local timelineCount = tonumber(project:GetTimelineCount()) or -1
+    dumpRawCollection("RESUME CLIP LIST", clips)
+    dumpRawCollection("RESUME SUBFOLDER LIST", folders)
+    dumpRawCollection("RESUME RENDER JOB LIST", renderJobs)
+    local clipCount = validatedSequenceCount(clips, function(item)
+        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
+        return true
+    end, "resume_clip_list")
+    local folderCount = validatedSequenceCount(folders, function(item)
+        if type(item) ~= "userdata" then return false, "expected Folder userdata" end
+        return true
+    end, "resume_subfolder_list")
+    local renderJobCount = validatedSequenceCount(renderJobs, function(item)
+        if type(item) ~= "table" then return false, "expected render job information table" end
+        if tostring(item.JobId or "") == "" then return false, "missing JobId" end
+        return true
+    end, "resume_render_job_list")
+    local firstName = tostring(profile.batch.source_files[1])
+    local expectedPath = tostring(profile.paths.input_dir):gsub("[\\/]$", "") .. "/" .. firstName
+    local exactClip = findExactClip(clips, expectedPath)
+    logValue("resume.root_clip_count", clipCount)
+    logValue("resume.root_folder_count", folderCount)
+    logValue("resume.timeline_count", timelineCount)
+    logValue("resume.render_job_count", renderJobCount)
+    logValue("resume.exact_first_source", exactClip ~= nil)
+    if clipCount ~= 1 or not exactClip then fail("Resume target must contain exactly the previously imported first source.") end
+    if folderCount ~= 0 then fail("Resume target contains unexpected Media Pool folders.") end
+    if timelineCount ~= 0 then fail("Resume target contains a timeline; expected the exact pre-timeline failure state.") end
+    if renderJobCount ~= 0 then fail("Resume target contains render jobs.") end
+    state.imported_file = firstName
+    state.bootstrap_status = "RESUMED_EXISTING_DIAGNOSTIC"
+    append(state.warnings, "Explicitly resumed the exact one-clip, zero-timeline diagnostic failure state; no DRP was re-imported.")
+    logLine("Existing Diagnostic Resume=SUCCESS")
+    return project, mediaPool, exactClip, expectedPath
+end
+
 local function ensureOneClip(project, profile)
     setStage("Media Pool")
     local mediaPool, root, clips = rootObjects(project)
@@ -676,24 +761,100 @@ local function ensureOneClip(project, profile)
     return mediaPool, clip, fullPath
 end
 
-local function setClipInput(project, clip)
-    setStage("Input Color Space")
-    local key = "Input Color Space"
-    for propertyKey, _ in pairs(clip:GetClipProperty() or {}) do
-        if contains(propertyKey, "input") and contains(propertyKey, "color") and contains(propertyKey, "space") then key = propertyKey break end
+local function evaluateInputPolicy(project, clip, profile)
+    setStage("Input Color Space Policy")
+    local metadataVerified = tostring(profile.batch.metadata_confirmation or "") ~= ""
+        and normalize(profile.batch.gamma) == normalize("S-Log3")
+        and normalize(profile.batch.primaries) == normalize("Sony S-Gamut3.Cine")
+    local homogeneousVerified = metadataVerified
+        and profile.batch.homogeneous_metadata_verified == true
+        and type(profile.batch.source_files) == "table" and #profile.batch.source_files > 0
+    state.source_metadata_status = metadataVerified and "VERIFIED" or "NOT_VERIFIED"
+    state.batch_homogeneity = homogeneousVerified and "VERIFIED" or "NOT_VERIFIED"
+
+    local projectInput = project:GetSetting("colorSpaceInput")
+    local projectGamma = project:GetSetting("colorSpaceInputGamma")
+    local autoManage = project:GetSetting("isAutoColorManage")
+    state.project_input_color_space = tostring(projectInput or "")
+    state.project_input_gamma = tostring(projectGamma or "")
+    logValue("input_policy.source_metadata", state.source_metadata_status)
+    logValue("input_policy.batch_homogeneity", state.batch_homogeneity)
+    logValue("input_policy.project_input_color_space", projectInput)
+    logValue("input_policy.project_input_gamma", projectGamma)
+    logValue("input_policy.automatic_color_management", autoManage)
+    if not metadataVerified or not homogeneousVerified then
+        state.effective_input_policy = "INPUT_UNVERIFIED"
+        fail("Source metadata or batch homogeneity is not verified.")
     end
-    local labels = {"S-Gamut3.Cine/S-Log3", "Sony S-Gamut3.Cine/S-Log3", "Sony S-Gamut3.Cine / S-Log3"}
-    for _, label in ipairs(labels) do
-        clip:SetClipProperty(key, label)
-        local actual = clip:GetClipProperty(key)
-        logValue("clip_input.read_back", actual)
-        if contains(actual, "s-gamut3.cine") and contains(actual, "s-log3") then return end
+    if not contains(projectInput, "s-gamut3.cine") or not contains(projectGamma, "s-log3") then
+        state.effective_input_policy = "INPUT_UNVERIFIED"
+        fail("Verified project Input Color Space does not match the homogeneous batch.")
     end
-    local actual = clip:GetClipProperty(key)
-    local inherited = normalize(actual) == "project" or tostring(actual) == "项目"
-    if inherited and contains(project:GetSetting("colorSpaceInput"), "s-gamut3.cine")
-        and contains(project:GetSetting("colorSpaceInputGamma"), "s-log3") then return end
-    fail("Effective Input Color Space could not be verified.")
+    if not (tostring(autoManage) == "0" or normalize(autoManage) == "false") then
+        state.effective_input_policy = "INPUT_UNVERIFIED"
+        fail("Automatic Color Management is not OFF.")
+    end
+
+    local evidence = {}
+    local inheritanceEvidence = false
+    local function recordEvidence(source, value)
+        local textValue = trim(value)
+        logValue("clip_input." .. source .. ".value", textValue)
+        if textValue == "" then return end
+        if normalize(textValue) == "project" or textValue == "项目" then
+            inheritanceEvidence = true
+            return
+        end
+        evidence[#evidence + 1] = {source = source, value = textValue}
+    end
+
+    local directOk, directValue = pcall(function() return clip:GetClipProperty("Input Color Space") end)
+    logValue("clip_input.direct.call_ok", directOk)
+    logValue("clip_input.direct.return_type", type(directValue))
+    if directOk then recordEvidence("direct", directValue) end
+
+    local snapshotOk, properties = pcall(function() return clip:GetClipProperty() end)
+    logValue("clip_input.snapshot.call_ok", snapshotOk)
+    logValue("clip_input.snapshot.return_type", type(properties))
+    if snapshotOk and type(properties) == "table" then
+        local matchIndex = 0
+        for key, value in pairs(properties) do
+            if type(key) == "string" and key:sub(1, 2) ~= "__"
+                and contains(key, "input") and contains(key, "color") and contains(key, "space") then
+                matchIndex = matchIndex + 1
+                logValue("clip_input.snapshot_match[" .. matchIndex .. "].key", key)
+                logValue("clip_input.snapshot_match[" .. matchIndex .. "].value_type", type(value))
+                recordEvidence("snapshot_match[" .. matchIndex .. "]", value)
+            end
+        end
+        logValue("clip_input.snapshot_match_count", matchIndex)
+    end
+
+    for _, item in ipairs(evidence) do
+        if not (contains(item.value, "s-gamut3.cine") and contains(item.value, "s-log3")) then
+            state.per_clip_input_api = "AVAILABLE_CONFLICT"
+            state.per_clip_input_value = item.value
+            state.effective_input_policy = "INPUT_UNVERIFIED"
+            fail("Per-clip Input Color Space explicitly conflicts with the verified batch: " .. item.value)
+        end
+    end
+    if #evidence > 0 then
+        state.per_clip_input_api = "AVAILABLE_MATCH"
+        state.per_clip_input_value = evidence[1].value
+        state.effective_input_policy = "EXPLICIT_CLIP_MATCH"
+        state.input_confidence = "HIGHEST — explicit clip match plus verified project input"
+        logLine("INPUT POLICY=EXPLICIT_CLIP_MATCH")
+        return
+    end
+
+    state.per_clip_input_api = inheritanceEvidence and "PROJECT_INHERITANCE" or "UNAVAILABLE / EMPTY"
+    state.per_clip_input_value = inheritanceEvidence and "Project" or ""
+    state.effective_input_policy = "VERIFIED_PROJECT_DEFAULT"
+    state.input_confidence = "HIGH — homogeneous metadata plus verified project input"
+    append(state.warnings,
+        "Per-clip Input Color Space is not exposed by the current Resolve scripting API. Effective input is accepted from independently verified homogeneous source metadata plus verified project-level input color management.")
+    logLine("PER_CLIP_INPUT_API=" .. state.per_clip_input_api)
+    logLine("INPUT POLICY=VERIFIED_PROJECT_DEFAULT")
 end
 
 local function findTimeline(project, name)
@@ -753,6 +914,15 @@ local function writeReport(tracebackText)
         "- Imported first source: `" .. state.imported_file .. "`",
         "- Timeline: `" .. state.timeline .. "`",
         "- DRP staging: `" .. state.drp_path .. "`", "",
+        "## Input policy", "",
+        "- Source Metadata: `" .. state.source_metadata_status .. "`",
+        "- Batch Homogeneity: `" .. state.batch_homogeneity .. "`",
+        "- Project Input Color Space: `" .. state.project_input_color_space .. "`",
+        "- Project Input Gamma: `" .. state.project_input_gamma .. "`",
+        "- Per-Clip Input API: `" .. state.per_clip_input_api .. "`",
+        "- Per-Clip Input Value: `" .. state.per_clip_input_value .. "`",
+        "- Effective Input Policy: `" .. state.effective_input_policy .. "`",
+        "- Confidence: `" .. state.input_confidence .. "`", "",
         "## Project Preset discovery", "",
         "- Discovery project: `" .. state.preset_discovery_project .. "`",
         "- GetPresetList return type: `" .. state.preset_return_type .. "`",
@@ -800,14 +970,18 @@ local function main()
         recordInitialSettings(project)
         applyProjectPresetBaseline(project, profile)
     elseif profile.project.bootstrap_method == "drp_template" then
-        project = bootstrapFromDrp(manager, currentProject, profile)
+        if profile.project.resume_existing_diagnostic == true then
+            project = resumeExistingDiagnostic(manager, currentProject, profile)
+        else
+            project = bootstrapFromDrp(manager, currentProject, profile)
+        end
     else
         fail("Unsupported bootstrap method after runtime validation.")
     end
     configureColorManagement(project)
     verifyFinalSettings(project, profile)
     local mediaPool, clip, sourcePath = ensureOneClip(project, profile)
-    setClipInput(project, clip)
+    evaluateInputPolicy(project, clip, profile)
     ensureTimeline(project, mediaPool, clip, sourcePath, profile)
 
     setStage("Save Project")

@@ -18,6 +18,8 @@
 - Fresh-project testing proved that `timelinePlaybackFrameRate` is readable but not writable through `Project:SetSetting()` in Resolve 20.3.2 Free on Windows; Project Format now uses a verified private blank DRP by default and full readback after import.
 - Added a Project Preset discovery gate: log the complete safely traversable `Project:GetPresetList()` result and require an exact visible preset name before creating a fresh diagnostic project or calling `SetPreset()`.
 - Added strict blank-template capture and import gates using the documented `ExportProject(projectName, filePath, false)` and `ImportProject(filePath, projectName)` APIs, with full format readback and collision refusal.
+- Added a three-state effective input policy: explicit clip match, verified homogeneous project default when clip Input Color Space is unavailable, and mandatory stop on any explicit conflict. Undocumented per-clip Input Color Space writes were removed.
+- Added a tightly gated recovery path for an exact one-clip, zero-timeline diagnostic failure state so capability fixes do not require another DRP import.
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
 
 ### Safety

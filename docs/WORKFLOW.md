@@ -32,16 +32,19 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 4. for `drp_template`, verifies the DRP exists, refuses an existing target project, calls `ImportProject(template_path, unique_project_name)`, loads it, then rechecks Playback FPS, Timeline FPS, width, height, blank Media Pool, zero timelines, and empty render queue;
 5. for optional `preset`, first calls `Project:GetPresetList()` and requires an exact visible runtime `preset_name` before project creation or `SetPreset()`;
 6. only after the selected bootstrap gate passes, configures and reads back the fixed Sony S-Log3 color-managed transform;
-7. imports only the first declared source;
-8. creates one diagnostic timeline;
-9. saves the project and stages a collision-safe DRP;
-10. opens Edit and stops.
+7. imports only the first declared source and evaluates the effective input policy without attempting undocumented per-clip Input Color Space writes;
+8. accepts `EXPLICIT_CLIP_MATCH`, or `VERIFIED_PROJECT_DEFAULT` only when `homogeneous_metadata_verified=true`, source metadata identifies Sony S-Gamut3.Cine / S-Log3, project input gamut/gamma match, and automatic management is off; any missing confirmation or explicit clip conflict stops;
+9. creates one diagnostic timeline;
+10. saves the project and stages a collision-safe DRP;
+11. opens Edit and stops.
 
 Do not continue if the diagnostic report contains an error.
 
 Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting("timelinePlaybackFrameRate", ...)` is called in a fresh empty project, even though the same key is readable. `Project:GetSetting()` therefore does not imply that the corresponding property is writable through `Project:SetSetting()`. Do not brute-force additional values. Capture a verified blank DRP for each confirmed format actually needed (for example 4K50, 4K59.94, 4K25, or 1080p50), then import it under a unique project name and read back all four format values. Templates establish only Project Format; the script continues to own and verify the color pipeline separately.
 
 Runtime configuration is not proof that a preset exists. Before creating another empty diagnostic project, the workflow calls `Project:GetPresetList()` on the current project and records the API return type, every safely traversable table key/value/type, and extracted preset-name candidates. Only an exact candidate match permits project creation and `SetPreset`. Trimmed and case-insensitive matches are diagnostic warnings and are never selected automatically.
+
+An existing diagnostic project is never reused by default. A recovery run requires all three private runtime gates: `resume_existing_diagnostic=true`, `allow_load_existing=true`, and `allow_create=false`. Before changing color settings, the script revalidates the exact project name, Project Format, one exact first source, zero folders, zero timelines, and an empty render queue. Any difference stops; the DRP is not imported again.
 
 ## 5. Compatibility and image review
 

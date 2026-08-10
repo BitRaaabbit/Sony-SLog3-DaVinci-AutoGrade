@@ -8,6 +8,10 @@ return {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
         allow_load_existing = false,
+        -- Set true only to resume an exact, previously validated one-clip,
+        -- zero-timeline diagnostic failure state. Also set allow_create=false
+        -- and allow_load_existing=true; otherwise leave false.
+        resume_existing_diagnostic = false,
         -- Recommended compatibility path: capture a verified blank project as
         -- a private DRP, then import it under the unique diagnostic name.
         bootstrap_method = "drp_template",
@@ -29,6 +33,9 @@ return {
         gamma = "S-Log3",
         primaries = "Sony S-Gamut3.Cine",
         metadata_confirmation = "camera_or_sidecar_metadata",
+        -- Set true only after every declared source has been confirmed to use
+        -- the same gamma and primaries. False/missing stops the input-policy gate.
+        homogeneous_metadata_verified = false,
         camera_model = "report_only",
         source_files = {
             "SONY_SLOG3_CLIP_001.MP4",
