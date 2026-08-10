@@ -46,6 +46,44 @@ local function tracebackHandler(err)
 end
 local function fail(message) append(state.errors,"stage="..state.stage.." | "..message); error(message,0) end
 
+local function safeString(v)
+    local ok,result=pcall(function()return tostring(v)end)
+    return ok and result or "<tostring failed>"
+end
+local function dumpRawCollection(label,collection)
+    logLine(label.." RAW BEGIN");value(label..".type",type(collection))
+    if type(collection)=="table"then
+        local diagnosticCount=0
+        local ok,err=pcall(function()
+            for key,item in pairs(collection)do
+                diagnosticCount=diagnosticCount+1
+                local prefix=label..".entry["..diagnosticCount.."]"
+                local sequence=type(key)=="number"and key>=1 and key%1==0
+                value(prefix..".key_type",type(key));value(prefix..".key",safeString(key))
+                value(prefix..".value_type",type(item));value(prefix..".value",safeString(item))
+                value(prefix..".is_sequence_entry",sequence);value(prefix..".is_userdata",type(item)=="userdata")
+                if type(key)=="string"and key:sub(1,2)=="__"then value(prefix..".classification","BRIDGE_METADATA")
+                elseif sequence then value(prefix..".classification","SEQUENCE_CANDIDATE")
+                else value(prefix..".classification","NON_SEQUENCE_AUXILIARY")end
+            end
+        end)
+        value(label..".diagnostic_entry_count",diagnosticCount);value(label..".iterate_ok",ok)
+        if not ok then value(label..".iterate_error",err)end
+    end
+    logLine(label.." RAW END")
+end
+local function validatedSequenceItems(collection,validator,label)
+    if type(collection)~="table"then fail(label.." did not return a Lua table.")end
+    local validated={};local count=0
+    for index,item in ipairs(collection)do
+        local valid,reason=validator(item)
+        value(label..".sequence["..index.."].value_type",type(item));value(label..".sequence["..index.."].validated",valid)
+        if not valid then fail(label.." sequence entry is invalid: "..tostring(reason))end
+        count=count+1;validated[count]=item
+    end
+    return validated,count
+end
+
 local function loadProfile()
     stage("Runtime Profile")
     local loader,err=loadfile(PROFILE_PATH); if not loader then fail("Cannot load runtime profile: "..tostring(err)) end
@@ -105,14 +143,36 @@ local function clipPath(clip)
     for k,v in pairs(clip:GetClipProperty()or{})do if compact(k)=="filepath"then return tostring(v or "")end end
     return ""
 end
+local function validatedTimelineItem(timeline,expectedPath)
+    local callOk,rawItems=pcall(function()return timeline:GetItemListInTrack("video",1)end)
+    value("timeline_item_list.call_ok",callOk);value("timeline_item_list.return_type",type(rawItems))
+    if not callOk then fail("GetItemListInTrack(video, 1) failed: "..tostring(rawItems))end
+    rawItems=rawItems or{};dumpRawCollection("TIMELINE ITEM LIST",rawItems)
+    local items,count=validatedSequenceItems(rawItems,function(item)
+        if type(item)~="userdata"then return false,"expected TimelineItem userdata"end
+        local nameOk,itemName=pcall(function()return item:GetName()end)
+        if not nameOk then return false,"TimelineItem:GetName failed: "..tostring(itemName)end
+        local poolOk,poolItem=pcall(function()return item:GetMediaPoolItem()end)
+        if not poolOk or type(poolItem)~="userdata"then return false,"GetMediaPoolItem did not return MediaPoolItem userdata"end
+        return true
+    end,"timeline_item_list")
+    value("validated_video_item_count",count)
+    if count~=1 then fail("Timeline must contain exactly one validated video item: "..timeline:GetName())end
+    local poolItem=items[1]:GetMediaPoolItem()
+    if expectedPath and pathKey(clipPath(poolItem))~=pathKey(expectedPath)then fail("Timeline source mismatch.")end
+    return items[1]
+end
 local function rootClips(project)return project:GetMediaPool():GetRootFolder():GetClipList()or{}end
 local function findClip(project,fullPath)for _,c in ipairs(rootClips(project))do if pathKey(clipPath(c))==pathKey(fullPath)then return c end end end
 local function importClip(project,fullPath)
     local existing=findClip(project,fullPath); if existing then return existing end
-    local imported=project:GetMediaPool():ImportMedia({fullPath})or{}; local clip=imported[1]
-    if not clip then for _,v in pairs(imported)do clip=v;break end end
-    if not clip then fail("ImportMedia failed: "..fullPath)end
-    return clip
+    local imported=project:GetMediaPool():ImportMedia({fullPath})or{};dumpRawCollection("IMPORT MEDIA RESULT",imported)
+    local items,count=validatedSequenceItems(imported,function(item)
+        if type(item)~="userdata"then return false,"expected imported MediaPoolItem userdata"end
+        return true
+    end,"import_media_result")
+    if count~=1 then fail("ImportMedia must return exactly one validated MediaPoolItem: "..fullPath)end
+    return items[1]
 end
 local function verifyClipInput(project,clip,p)
     local evidence={}
@@ -151,9 +211,7 @@ end
 local function findTimeline(project,name)
     for i=1,project:GetTimelineCount()do local t=project:GetTimelineByIndex(i);if t and t:GetName()==name then return t end end
 end
-local function oneItem(timeline)
-    local items=timeline:GetItemListInTrack("video",1)or{};if #items~=1 then fail("Timeline must contain one video item: "..timeline:GetName())end;return items[1]
-end
+local function oneItem(timeline,expectedPath)return validatedTimelineItem(timeline,expectedPath)end
 
 local function selectedFiles(p)
     local selected={}
@@ -194,7 +252,7 @@ local function createTargets(project,p,files)
         local timeline=findTimeline(project,timelineName)
         if not timeline then timeline=project:GetMediaPool():CreateTimelineFromClips(timelineName,{clip})end
         if not timeline then fail("Could not create target timeline: "..timelineName)end
-        local item=oneItem(timeline);if pathKey(clipPath(item:GetMediaPoolItem()))~=pathKey(fullPath)then fail("Timeline source mismatch.")end
+        local item=oneItem(timeline,fullPath)
         entries[#entries+1]={name=name,timeline=timeline,item=item}
     end
     return entries

@@ -32,3 +32,7 @@ The first blank-template capture stopped because a generic `pairs()` counter rep
 ## 2026-08-11 — effective input policy
 
 The verified DRP diagnostic passed 4K50, RCM, final settings, Unicode-path import, and exact one-source Media Pool validation, then found that `MediaPoolItem:GetClipProperty("Input Color Space")` returned an empty string. The installed official README documents generic clip-property access, explicitly warns that some properties may be read-only or context-disabled, and does not guarantee Input Color Space as writable. Diagnostic no longer attempts `SetClipProperty` aliases. It distinguishes an explicit clip match, a high-confidence verified project default for homogeneous metadata, and an explicit conflict that must stop.
+
+## 2026-08-11 — TimelineItem bridge collection validation
+
+After `CreateTimelineFromClips()` returned a valid Timeline, the diagnostic stopped on `#timeline:GetItemListInTrack("video", 1) ~= 1`. This repeated the bridge-collection assumption already disproved for Media Pool and render-job lists. Timeline collections now receive the same raw-structure diagnostics and sequence-only decision path, extended with TimelineItem-specific proof: userdata, callable read-only methods, a valid MediaPoolItem, and exact normalized source path. A single already-created correct diagnostic timeline is safely reusable; an empty or conflicting one is preserved and stops the workflow.

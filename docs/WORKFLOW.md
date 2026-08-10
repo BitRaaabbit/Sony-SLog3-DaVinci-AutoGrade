@@ -44,7 +44,9 @@ Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting
 
 Runtime configuration is not proof that a preset exists. Before creating another empty diagnostic project, the workflow calls `Project:GetPresetList()` on the current project and records the API return type, every safely traversable table key/value/type, and extracted preset-name candidates. Only an exact candidate match permits project creation and `SetPreset`. Trimmed and case-insensitive matches are diagnostic warnings and are never selected automatically.
 
-An existing diagnostic project is never reused by default. A recovery run requires all three private runtime gates: `resume_existing_diagnostic=true`, `allow_load_existing=true`, and `allow_create=false`. Before changing color settings, the script revalidates the exact project name, Project Format, one exact first source, zero folders, zero timelines, and an empty render queue. Any difference stops; the DRP is not imported again.
+An existing diagnostic project is never reused by default. A recovery run requires all three private runtime gates: `resume_existing_diagnostic=true`, `allow_load_existing=true`, and `allow_create=false`. Before changing color settings, the script revalidates the exact project name, Project Format, one exact first source, zero folders, an empty render queue, and either zero timelines or one exact expected diagnostic timeline. An existing timeline is reused only when validated sequence traversal proves exactly one TimelineItem and its MediaPoolItem path matches the first source. An empty, mismatched, unexpected, or additional timeline stops without deletion or replacement; the DRP is not imported again.
+
+Resolve/Fusion bridge collections are never validated with `pairs()` count or raw `#table`. Raw traversal is logged for diagnosis, while the decision path counts only sequence entries that pass API-specific object and read-only method checks.
 
 ## 5. Compatibility and image review
 

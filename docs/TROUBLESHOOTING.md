@@ -36,6 +36,10 @@ The installed Resolve 20.3.2 README documents generic `GetClipProperty` and `Set
 
 Treat clip API visibility separately from project color management. A non-empty explicit Sony S-Gamut3.Cine / S-Log3 clip value is `EXPLICIT_CLIP_MATCH`; any explicit different value is `INPUT_UNVERIFIED` and stops. An empty or unavailable value can be `VERIFIED_PROJECT_DEFAULT` only when the runtime explicitly declares `homogeneous_metadata_verified=true`, confirmed gamma/primaries are Sony S-Gamut3.Cine / S-Log3, project input gamut/gamma read back correctly, automatic color management is off, and no clip override evidence is exposed. The report must retain the API warning and confidence basis.
 
+## Timeline item count disagrees with Resolve
+
+Do not use `#timeline:GetItemListInTrack(...)` or a `pairs()` count as the number of TimelineItems. Log the raw bridge table first, then traverse only sequence entries and validate TimelineItem userdata through safe read-only calls. A valid diagnostic timeline has exactly one accepted TimelineItem, a valid MediaPoolItem, and an exact normalized source-path match. If an existing diagnostic timeline has zero validated video items, report `EMPTY_DIAGNOSTIC_TIMELINE` and stop without creating, deleting, or replacing a timeline.
+
 ## Display artifacts
 
 - RCM Only already abnormal: inspect source LED/moire/chroma noise revealed by normal Rec.709 contrast.

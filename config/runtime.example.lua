@@ -8,9 +8,10 @@ return {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
         allow_load_existing = false,
-        -- Set true only to resume an exact, previously validated one-clip,
-        -- zero-timeline diagnostic failure state. Also set allow_create=false
-        -- and allow_load_existing=true; otherwise leave false.
+        -- Set true only to resume an exact, previously validated one-clip
+        -- diagnostic failure state. Zero timelines is accepted; one timeline
+        -- is accepted only when its name and sole validated source match.
+        -- Also set allow_create=false and allow_load_existing=true.
         resume_existing_diagnostic = false,
         -- Recommended compatibility path: capture a verified blank project as
         -- a private DRP, then import it under the unique diagnostic name.
