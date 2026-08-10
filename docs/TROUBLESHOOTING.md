@@ -40,6 +40,10 @@ Treat clip API visibility separately from project color management. A non-empty 
 
 Do not use `#timeline:GetItemListInTrack(...)` or a `pairs()` count as the number of TimelineItems. Log the raw bridge table first, then traverse only sequence entries and validate TimelineItem userdata through safe read-only calls. A valid diagnostic timeline has exactly one accepted TimelineItem, a valid MediaPoolItem, and an exact normalized source-path match. If an existing diagnostic timeline has zero validated video items, report `EMPTY_DIAGNOSTIC_TIMELINE` and stop without creating, deleting, or replacing a timeline.
 
+## Media Pool shows an extra item after creating a Timeline
+
+Do not equate `RootFolder:GetClipList()` userdata count with source-media count. Resolve can expose a Timeline as a MediaPoolItem alongside file-backed clips. Record `GetName()`, the complete safe `GetClipProperty()` table, File Path, Type, Resolution, FPS, and other available fields for every validated item. Classify a non-empty File Path as `SOURCE_MEDIA`; classify an empty-path item as `TIMELINE_MEDIA_POOL_ITEM` only when its name exactly matches the sole expected Project Timeline. Treat localized `Type` and displayed UUID text as diagnostics, not identity. A second file-backed item or any remaining `OTHER_MEDIA_POOL_ITEM` stops without cleanup.
+
 ## Display artifacts
 
 - RCM Only already abnormal: inspect source LED/moire/chroma noise revealed by normal Rec.709 contrast.

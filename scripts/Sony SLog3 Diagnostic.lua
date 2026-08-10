@@ -29,6 +29,9 @@ local state = {
     per_clip_input_value = "",
     effective_input_policy = "INPUT_UNVERIFIED",
     input_confidence = "NONE",
+    media_pool_source_count = -1,
+    media_pool_timeline_item_count = -1,
+    media_pool_other_count = -1,
     preset_return_type = "NOT_CALLED",
     preset_discovery_project = "UNKNOWN",
     preset_target = "",
@@ -661,6 +664,146 @@ local function clipPath(clip)
     return ""
 end
 
+local function dumpRawClipProperties(label, properties)
+    logLine(label .. " GET CLIP PROPERTY RAW BEGIN")
+    logValue(label .. ".properties_type", type(properties))
+    if type(properties) == "table" then
+        local diagnosticCount = 0
+        local iterateOk, iterateError = pcall(function()
+            for key, value in pairs(properties) do
+                diagnosticCount = diagnosticCount + 1
+                local entry = label .. ".property[" .. tostring(diagnosticCount) .. "]"
+                logValue(entry .. ".key_type", type(key))
+                logValue(entry .. ".key", safeString(key))
+                logValue(entry .. ".value_type", type(value))
+                logValue(entry .. ".value", safeString(value))
+                logValue(entry .. ".classification",
+                    type(key) == "string" and key:sub(1, 2) == "__" and "BRIDGE_METADATA" or "PROPERTY_EVIDENCE")
+            end
+        end)
+        logValue(label .. ".property_entry_count_diagnostic_only", diagnosticCount)
+        logValue(label .. ".property_iterate_ok", iterateOk)
+        if not iterateOk then logValue(label .. ".property_iterate_error", iterateError) end
+    end
+    logLine(label .. " GET CLIP PROPERTY RAW END")
+end
+
+local function readNamedClipProperty(item, propertyName, label)
+    local callOk, value = pcall(function() return item:GetClipProperty(propertyName) end)
+    logValue(label .. "." .. compact(propertyName) .. ".call_ok", callOk)
+    logValue(label .. "." .. compact(propertyName) .. ".return_type", type(value))
+    logValue(label .. "." .. compact(propertyName) .. ".value", callOk and value or "")
+    return callOk and tostring(value or "") or ""
+end
+
+local function classifyMediaPoolItems(rawItems, expectedPath, projectTimelineName, label)
+    local items, validatedCount = validatedSequenceItems(rawItems, function(item)
+        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
+        local nameOk, itemName = pcall(function() return item:GetName() end)
+        if not nameOk then return false, "MediaPoolItem:GetName failed: " .. tostring(itemName) end
+        local propertiesOk, properties = pcall(function() return item:GetClipProperty() end)
+        if not propertiesOk then return false, "MediaPoolItem:GetClipProperty failed: " .. tostring(properties) end
+        if type(properties) ~= "table" then return false, "GetClipProperty did not return a property table" end
+        return true
+    end, label .. "_validated_items")
+
+    local result = {
+        validated_count = validatedCount,
+        source_media = {},
+        timeline_media_pool_items = {},
+        other_media_pool_items = {},
+        source_count = 0,
+        timeline_item_count = 0,
+        other_count = 0,
+        exact_source = nil
+    }
+    for index, item in ipairs(items) do
+        local itemLabel = label .. ".item[" .. tostring(index) .. "]"
+        logLine(itemLabel .. " DIAGNOSTICS BEGIN")
+        local nameOk, itemName = pcall(function() return item:GetName() end)
+        logValue(itemLabel .. ".get_name_call_ok", nameOk)
+        logValue(itemLabel .. ".name", itemName)
+        if not nameOk then fail("Validated MediaPoolItem lost GetName capability.") end
+        local propertiesOk, properties = pcall(function() return item:GetClipProperty() end)
+        logValue(itemLabel .. ".get_clip_property_call_ok", propertiesOk)
+        logValue(itemLabel .. ".get_clip_property_return_type", type(properties))
+        if not propertiesOk or type(properties) ~= "table" then fail("Validated MediaPoolItem lost GetClipProperty capability.") end
+        dumpRawClipProperties(itemLabel, properties)
+
+        local filePath = readNamedClipProperty(item, "File Path", itemLabel)
+        local itemType = readNamedClipProperty(item, "Type", itemLabel)
+        local resolution = readNamedClipProperty(item, "Resolution", itemLabel)
+        local fps = readNamedClipProperty(item, "FPS", itemLabel)
+        readNamedClipProperty(item, "Video Codec", itemLabel)
+        readNamedClipProperty(item, "Audio Codec", itemLabel)
+        readNamedClipProperty(item, "Duration", itemLabel)
+        local classification = "OTHER_MEDIA_POOL_ITEM"
+        local detail = {
+            item = item,
+            name = tostring(itemName or ""),
+            file_path = filePath,
+            item_type = itemType,
+            resolution = resolution,
+            fps = fps
+        }
+        if filePath ~= "" then
+            classification = "SOURCE_MEDIA"
+            result.source_count = result.source_count + 1
+            result.source_media[result.source_count] = detail
+            if pathKey(filePath) == pathKey(expectedPath) then result.exact_source = detail end
+        elseif tostring(projectTimelineName or "") ~= "" and tostring(itemName or "") == tostring(projectTimelineName) then
+            classification = "TIMELINE_MEDIA_POOL_ITEM"
+            result.timeline_item_count = result.timeline_item_count + 1
+            result.timeline_media_pool_items[result.timeline_item_count] = detail
+        else
+            result.other_count = result.other_count + 1
+            result.other_media_pool_items[result.other_count] = detail
+        end
+        logValue(itemLabel .. ".normalized_file_path", pathKey(filePath))
+        logValue(itemLabel .. ".expected_source_path_match", filePath ~= "" and pathKey(filePath) == pathKey(expectedPath))
+        logValue(itemLabel .. ".project_timeline_name_match",
+            filePath == "" and tostring(projectTimelineName or "") ~= "" and tostring(itemName or "") == tostring(projectTimelineName))
+        logValue(itemLabel .. ".classification", classification)
+        logLine(itemLabel .. " DIAGNOSTICS END")
+    end
+    logValue(label .. ".validated_userdata_count", result.validated_count)
+    logValue(label .. ".source_media_count", result.source_count)
+    logValue(label .. ".timeline_media_pool_item_count", result.timeline_item_count)
+    logValue(label .. ".other_media_pool_item_count", result.other_count)
+    return result
+end
+
+local function projectTimelineState(project, expectedName, label)
+    local count = tonumber(project:GetTimelineCount()) or -1
+    logValue(label .. ".timeline_count", count)
+    if count < 0 or count > 1 then fail("Project must contain zero or one diagnostic timeline.") end
+    if count == 0 then return 0, nil, "" end
+    local timeline = project:GetTimelineByIndex(1)
+    local nameOk, timelineName = pcall(function() return timeline and timeline:GetName() end)
+    logValue(label .. ".timeline_name_call_ok", nameOk)
+    logValue(label .. ".timeline_name", timelineName)
+    logValue(label .. ".expected_timeline_name", expectedName)
+    if not nameOk or not timeline or tostring(timelineName) ~= tostring(expectedName) then
+        fail("Existing timeline name does not match the expected diagnostic timeline.")
+    end
+    return 1, timeline, tostring(timelineName)
+end
+
+local function validateMediaPoolClassification(classified, expectedTimelineCount, requireSource, label)
+    state.media_pool_source_count = classified.source_count
+    state.media_pool_timeline_item_count = classified.timeline_item_count
+    state.media_pool_other_count = classified.other_count
+    if classified.source_count > 1 then fail("Media Pool contains a second file-backed source.") end
+    if requireSource and classified.source_count ~= 1 then fail("Media Pool must contain exactly one file-backed source.") end
+    if classified.source_count == 1 and not classified.exact_source then fail("The sole file-backed source is not the declared diagnostic source.") end
+    if classified.timeline_item_count ~= expectedTimelineCount then
+        fail("Timeline MediaPoolItem count does not match Project Timeline count.")
+    end
+    if classified.other_count ~= 0 then fail("Media Pool contains an unexpected non-file-backed object.") end
+    logLine(label .. "=VALID")
+    return classified.exact_source and classified.exact_source.item or nil
+end
+
 local function validateTimelineItems(timeline, expectedPath, label)
     local callOk, rawItems = pcall(function() return timeline:GetItemListInTrack("video", 1) end)
     logValue(label .. ".call_ok", callOk)
@@ -702,13 +845,6 @@ local function rootObjects(project)
     return mediaPool, root, root:GetClipList() or {}
 end
 
-local function findExactClip(clips, expectedPath)
-    for _, clip in ipairs(clips) do
-        if pathKey(clipPath(clip)) == pathKey(expectedPath) then return clip end
-    end
-    return nil
-end
-
 local function resumeExistingDiagnostic(manager, currentProject, profile)
     setStage("Existing Diagnostic Resume")
     local target = tostring(profile.project.name)
@@ -738,14 +874,9 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
     local mediaPool, root, clips = rootObjects(project)
     local folders = root:GetSubFolderList() or {}
     local renderJobs = project:GetRenderJobList() or {}
-    local timelineCount = tonumber(project:GetTimelineCount()) or -1
     dumpRawCollection("RESUME CLIP LIST", clips)
     dumpRawCollection("RESUME SUBFOLDER LIST", folders)
     dumpRawCollection("RESUME RENDER JOB LIST", renderJobs)
-    local clipCount = validatedSequenceCount(clips, function(item)
-        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
-        return true
-    end, "resume_clip_list")
     local folderCount = validatedSequenceCount(folders, function(item)
         if type(item) ~= "userdata" then return false, "expected Folder userdata" end
         return true
@@ -757,25 +888,22 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
     end, "resume_render_job_list")
     local firstName = tostring(profile.batch.source_files[1])
     local expectedPath = tostring(profile.paths.input_dir):gsub("[\\/]$", "") .. "/" .. firstName
-    local exactClip = findExactClip(clips, expectedPath)
-    logValue("resume.root_clip_count", clipCount)
+    local timelineCount, existingTimeline, timelineName = projectTimelineState(
+        project, profile.diagnostic.timeline_name, "resume_project_timeline")
+    local classified = classifyMediaPoolItems(clips, expectedPath, timelineName, "resume_media_pool")
+    local exactClip = validateMediaPoolClassification(classified, timelineCount, true, "RESUME MEDIA POOL")
+    logValue("resume.root_media_pool_userdata_count", classified.validated_count)
+    logValue("resume.source_media_count", classified.source_count)
+    logValue("resume.timeline_media_pool_item_count", classified.timeline_item_count)
+    logValue("resume.other_media_pool_item_count", classified.other_count)
     logValue("resume.root_folder_count", folderCount)
     logValue("resume.timeline_count", timelineCount)
     logValue("resume.render_job_count", renderJobCount)
     logValue("resume.exact_first_source", exactClip ~= nil)
-    if clipCount ~= 1 or not exactClip then fail("Resume target must contain exactly the previously imported first source.") end
     if folderCount ~= 0 then fail("Resume target contains unexpected Media Pool folders.") end
-    if timelineCount < 0 or timelineCount > 1 then fail("Resume target must contain zero or one diagnostic timeline.") end
     if renderJobCount ~= 0 then fail("Resume target contains render jobs.") end
     state.imported_file = firstName
     if timelineCount == 1 then
-        local existingTimeline = project:GetTimelineByIndex(1)
-        local nameOk, existingName = pcall(function() return existingTimeline and existingTimeline:GetName() end)
-        logValue("resume.timeline_name_call_ok", nameOk)
-        logValue("resume.timeline_name", existingName)
-        if not nameOk or not existingTimeline or tostring(existingName) ~= tostring(profile.diagnostic.timeline_name) then
-            fail("Existing timeline name does not match the expected diagnostic timeline.")
-        end
         validateTimelineItems(existingTimeline, expectedPath, "resume_timeline_item_list")
         state.timeline = tostring(profile.diagnostic.timeline_name)
         state.bootstrap_status = "REUSED_EXISTING_DIAGNOSTIC_TIMELINE"
@@ -795,20 +923,18 @@ local function ensureOneClip(project, profile)
     local folders = root:GetSubFolderList() or {}
     dumpRawCollection("MEDIA POOL CLIP LIST", clips)
     dumpRawCollection("MEDIA POOL SUBFOLDER LIST", folders)
-    local clipCount = validatedSequenceCount(clips, function(item)
-        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
-        return true
-    end, "media_pool_clip_list")
     local folderCount = validatedSequenceCount(folders, function(item)
         if type(item) ~= "userdata" then return false, "expected Folder userdata" end
         return true
     end, "media_pool_subfolder_list")
     local firstName = profile.batch.source_files[1]
     local fullPath = tostring(profile.paths.input_dir):gsub("[\\/]$", "") .. "/" .. firstName
-    local clip = findExactClip(clips, fullPath)
-    if clipCount > 0 and not (clipCount == 1 and clip) then fail("Target project contains unexpected Media Pool content.") end
+    local timelineCount, _, timelineName = projectTimelineState(project, profile.diagnostic.timeline_name, "media_pool_project_timeline")
+    local before = classifyMediaPoolItems(clips, fullPath, timelineName, "media_pool_before")
+    local clip = validateMediaPoolClassification(before, timelineCount, false, "MEDIA POOL PRE-IMPORT")
     if folderCount > 0 then fail("Target project contains unexpected Media Pool folders.") end
     if not clip then
+        if timelineCount ~= 0 then fail("Existing diagnostic timeline has no exact file-backed source; import is forbidden.") end
         setStage("Media Import")
         logValue("media_import.path", fullPath)
         local ok, imported = pcall(function() return mediaPool:ImportMedia({fullPath}) end)
@@ -829,11 +955,8 @@ local function ensureOneClip(project, profile)
     end
     local _, _, after = rootObjects(project)
     dumpRawCollection("MEDIA POOL POST IMPORT CLIP LIST", after)
-    local afterCount = validatedSequenceCount(after, function(item)
-        if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
-        return true
-    end, "media_pool_post_import_clip_list")
-    if afterCount ~= 1 or not findExactClip(after, fullPath) then fail("Media Pool post-import verification failed.") end
+    local afterClassification = classifyMediaPoolItems(after, fullPath, timelineName, "media_pool_after")
+    clip = validateMediaPoolClassification(afterClassification, timelineCount, true, "MEDIA POOL")
     state.imported_file = firstName
     logLine("Media Import=SUCCESS")
     logLine("Media Pool=ONE_EXACT_SOURCE")
@@ -994,6 +1117,10 @@ local function writeReport(tracebackText)
         "- Imported first source: `" .. state.imported_file .. "`",
         "- Timeline: `" .. state.timeline .. "`",
         "- DRP staging: `" .. state.drp_path .. "`", "",
+        "## Media Pool classification", "",
+        "- Source media count: `" .. tostring(state.media_pool_source_count) .. "`",
+        "- Timeline MediaPoolItem count: `" .. tostring(state.media_pool_timeline_item_count) .. "`",
+        "- Other MediaPoolItem count: `" .. tostring(state.media_pool_other_count) .. "`", "",
         "## Input policy", "",
         "- Source Metadata: `" .. state.source_metadata_status .. "`",
         "- Batch Homogeneity: `" .. state.batch_homogeneity .. "`",

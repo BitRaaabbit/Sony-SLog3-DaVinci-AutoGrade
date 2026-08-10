@@ -21,6 +21,7 @@
 - Added a three-state effective input policy: explicit clip match, verified homogeneous project default when clip Input Color Space is unavailable, and mandatory stop on any explicit conflict. Undocumented per-clip Input Color Space writes were removed.
 - Added a tightly gated recovery path for an exact one-clip diagnostic failure state, accepting either zero timelines or one exact validated diagnostic timeline, so capability fixes do not require another DRP import.
 - Replaced raw Timeline bridge-table length checks with raw diagnostics plus validated TimelineItem traversal, exact MediaPoolItem source verification, and safe reuse of one already-created diagnostic timeline.
+- Classified root MediaPoolItems as file-backed source, expected Timeline item, or unexpected object so a Timeline no longer inflates source-media count; added full property diagnostics and exact path/name gates.
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
 
 ### Safety

@@ -36,3 +36,7 @@ The verified DRP diagnostic passed 4K50, RCM, final settings, Unicode-path impor
 ## 2026-08-11 — TimelineItem bridge collection validation
 
 After `CreateTimelineFromClips()` returned a valid Timeline, the diagnostic stopped on `#timeline:GetItemListInTrack("video", 1) ~= 1`. This repeated the bridge-collection assumption already disproved for Media Pool and render-job lists. Timeline collections now receive the same raw-structure diagnostics and sequence-only decision path, extended with TimelineItem-specific proof: userdata, callable read-only methods, a valid MediaPoolItem, and exact normalized source path. A single already-created correct diagnostic timeline is safely reusable; an empty or conflicting one is preserved and stops the workflow.
+
+## 2026-08-11 — MediaPoolItem semantic classification
+
+After restart, the exact one-source project reported two validated root MediaPoolItem userdata while Project Timeline Count was one and the declared source still matched. The resume gate had incorrectly treated total root userdata as source count. Root items are now diagnosed property-by-property and classified by capability and evidence: non-empty File Path is file-backed source media; empty File Path plus exact sole Project Timeline name is a Timeline MediaPoolItem; everything else is unexpected. The localized `Type` string and bridge UUID display are never sole identity gates.
