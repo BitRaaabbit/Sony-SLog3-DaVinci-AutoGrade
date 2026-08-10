@@ -18,7 +18,7 @@ External scripting access is not required. The workflow does not install codecs,
 
 ## Design
 
-`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates or loads an isolated project, records the untouched initial settings, and verifies playback FPS before setting the documented timeline FPS property. Resolve 20.3.2 Free may expose playback FPS as read-only to `Project:SetSetting`; when it differs, the diagnostic requires an explicitly configured and previously verified Resolve Project Preset (or a manually preconfigured fresh project) and stops before media import. After the gate passes, it applies the fixed Sony color-management transform, imports only the first declared source, creates one diagnostic timeline, saves the project, and stops on Edit.
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile, validates one homogeneous batch, creates an isolated project, records its untouched initial settings, and applies the exact human-verified Project Format preset named by the private runtime. It immediately reads back Playback FPS, Timeline FPS, width, and height and stops on any mismatch. Project Format and color are deliberately separate: only after the preset gate passes does the script configure and verify the fixed Sony color-management transform, import the first declared source, create one diagnostic timeline, save, and stop on Edit.
 
 `Sony SLog3 AutoGrade.lua` is gated behind all of the following:
 
@@ -38,7 +38,7 @@ The automation copies a verified reference grade. It does not encode permanent N
 
    `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\`
 
-2. Copy `config/runtime.example.lua` to the ignored `config/runtime.local.lua` and replace all sample values with confirmed local metadata and paths.
+2. In Resolve, create and verify a Project Preset matching the confirmed batch resolution and frame rate. Copy `config/runtime.example.lua` to the ignored `config/runtime.local.lua`, enter that exact `preset_name`, and replace all sample values with confirmed local metadata and paths.
 3. Copy the local profile to:
 
    `%TEMP%\SonySLog3AutoGrade\runtime.lua`

@@ -10,7 +10,7 @@
 - **REG-008 — Read-only source:** never modify, move, rename, delete, overwrite, or render into source.
 - **REG-009 — Collision safety:** existing output is never silently overwritten.
 - **REG-010 — Test before batch:** representative small-scale output and human approval are required.
-- **REG-011 — FPS gate:** record initial FPS values and verify Playback FPS before setting Timeline FPS. Do not brute-force an API-rejected Playback key. If required, apply only an explicitly configured, previously verified Project Preset; stop before import on mismatch.
+- **REG-011 — Readable is not writable:** never assume that `Project:SetSetting()` can write every property exposed by `Project:GetSetting()`. Resolve 20.3.2 Free on Windows exposes `timelinePlaybackFrameRate` for reading but rejects writes. Apply the exact runtime-selected, human-verified Project Format preset with `Project:SetPreset()`, then read back Playback FPS, Timeline FPS, width, and height; stop before color management or import on any failure or mismatch.
 - **REG-012 — Homogeneous color science:** mixed/unknown gamma or primaries stops preflight; no automatic LUT guessing.
 - **REG-013 — Reference-grade integrity:** AutoGrade requires an approved reference timeline and exact node count.
 - **REG-014 — Bounded batch:** first test is at most three clips; each batch invocation is at most ten.

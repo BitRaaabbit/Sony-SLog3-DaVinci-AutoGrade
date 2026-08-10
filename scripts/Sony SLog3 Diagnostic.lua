@@ -84,22 +84,6 @@ local function numberEquals(value, expected)
     return number ~= nil and math.abs(number - expected) < 0.001
 end
 
-local function uniqueStrings(values)
-    local result, seen = {}, {}
-    for _, value in ipairs(values) do
-        local text = tostring(value)
-        if not seen[text] then result[#result + 1] = text; seen[text] = true end
-    end
-    return result
-end
-
-local function frameRateCandidates(fps)
-    if math.abs(fps - math.floor(fps + 0.5)) < 0.000001 then
-        return uniqueStrings({string.format("%.0f", fps), string.format("%.1f", fps), string.format("%.3f", fps)})
-    end
-    return uniqueStrings({tostring(fps), string.format("%.3f", fps)})
-end
-
 local function tracebackHandler(errorValue)
     local message = tostring(errorValue)
     if debug and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -124,6 +108,7 @@ local function loadRuntimeProfile()
     if tonumber(profile.schema_version) ~= 2 then fail("Unsupported runtime profile schema_version.") end
     if profile.mode ~= "diagnostic" then fail("Diagnostic script requires profile.mode='diagnostic'.") end
     if type(profile.project) ~= "table" or tostring(profile.project.name or "") == "" then fail("Missing project.name.") end
+    if tostring(profile.project.preset_name or "") == "" then fail("A verified project.preset_name is required for the Project Format baseline.") end
     if type(profile.paths) ~= "table" then fail("Missing paths table.") end
     if type(profile.batch) ~= "table" then fail("Missing batch table.") end
     if type(profile.batch.source_files) ~= "table" or #profile.batch.source_files < 1 then fail("No source_files declared.") end
@@ -217,7 +202,6 @@ end
 local function recordInitialSettings(project)
     setStage("Project Settings / Initial State")
     logLine("INITIAL SETTINGS")
-    local initial = {}
     local keys = {
         "timelinePlaybackFrameRate",
         "timelineFrameRate",
@@ -229,9 +213,7 @@ local function recordInitialSettings(project)
         logValue("initial." .. key .. ".read_call_ok", readOk)
         logValue("initial." .. key .. ".read_back", actual)
         if not readOk then fail("Initial GetSetting failed for " .. key .. ": " .. tostring(actual)) end
-        initial[key] = actual
     end
-    return initial
 end
 
 local function setReadCompare(project, key, candidates, validator, label)
@@ -252,47 +234,44 @@ local function setReadCompare(project, key, candidates, validator, label)
     fail("SET/READ BACK/COMPARE failed for " .. label .. "; actual=" .. tostring(project:GetSetting(key)))
 end
 
-local function configureProject(project, profile, initial)
+local function applyProjectPresetBaseline(project, profile)
     local width = tonumber(profile.batch.width)
     local height = tonumber(profile.batch.height)
     local fps = tonumber(profile.batch.frame_rate)
-    local fpsCandidates = frameRateCandidates(fps)
 
-    -- REG-011: Resolve 20.3.2 Free exposes Playback FPS for reading but rejected
-    -- Project:SetSetting for this key in a fresh project. Verify it first; an
-    -- explicitly named Resolve Project Preset is the only scripted fallback.
-    setStage("Project Settings / Playback Frame Rate Gate")
-    local playback = initial.timelinePlaybackFrameRate
-    logValue("playback_gate.initial", playback)
-    if not numberEquals(playback, fps) then
-        local presetName = tostring(profile.project.preset_name or "")
-        logValue("playback_gate.project_preset", presetName ~= "" and presetName or "NOT_CONFIGURED")
-        if presetName == "" then
-            fail("timelinePlaybackFrameRate is not writable through Project:SetSetting on this Resolve installation; a verified Project Preset or manually preconfigured fresh project is required.")
-        end
-        setStage("Project Preset")
-        local presetOk, presetResult = pcall(function() return project:SetPreset(presetName) end)
-        logValue("project_preset.name", presetName)
-        logValue("project_preset.call_ok", presetOk)
-        logValue("project_preset.return", presetResult)
-        local readOk, actual = pcall(function() return project:GetSetting("timelinePlaybackFrameRate") end)
-        logValue("project_preset.playback_read_call_ok", readOk)
-        logValue("project_preset.playback_read_back", actual)
-        logValue("project_preset.playback_compare", readOk and numberEquals(actual, fps) and "MATCH" or "MISMATCH")
-        if not (presetOk and presetResult == true and readOk and numberEquals(actual, fps)) then
-            fail("Configured Project Preset did not establish the required Playback Frame Rate.")
-        end
-    else
-        logLine("Playback Frame Rate Gate=MATCH")
+    -- REG-011: GetSetting can expose properties that SetSetting cannot write.
+    -- Establish the complete Project Format baseline through one explicitly
+    -- configured and human-verified Resolve Project Preset, then read it back.
+    setStage("Project Preset")
+    local presetName = tostring(profile.project.preset_name)
+    local presetOk, presetResult = pcall(function() return project:SetPreset(presetName) end)
+    logValue("project_preset.name", presetName)
+    logValue("project_preset.call_ok", presetOk)
+    logValue("project_preset.return", presetResult)
+    if not (presetOk and presetResult == true) then fail("Project:SetPreset failed for the exact configured preset name.") end
+
+    logLine("PROJECT PRESET READ BACK")
+    local checks = {
+        {"timelinePlaybackFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineResolutionWidth", function(v) return tonumber(v) == width end},
+        {"timelineResolutionHeight", function(v) return tonumber(v) == height end}
+    }
+    for _, entry in ipairs(checks) do
+        local key, validator = entry[1], entry[2]
+        local readOk, actual = pcall(function() return project:GetSetting(key) end)
+        local matched = readOk and validator(actual)
+        logValue("project_preset." .. key .. ".read_call_ok", readOk)
+        logValue("project_preset." .. key .. ".read_back", actual)
+        logValue("project_preset." .. key .. ".compare", matched and "MATCH" or "MISMATCH")
+        if not matched then fail("Project Preset baseline mismatch for " .. key .. "; actual=" .. tostring(actual)) end
+        state.settings[key] = tostring(actual)
     end
+    logLine("Project Preset=SUCCESS")
+end
 
-    -- timelineFrameRate is explicitly documented as writable by Resolve.
-    setReadCompare(project, "timelineFrameRate", fpsCandidates,
-        function(v) return numberEquals(v, fps) end, "Timeline Frame Rate")
-    setReadCompare(project, "timelineResolutionWidth", {tostring(width)},
-        function(v) return tonumber(v) == width end, "Timeline Width")
-    setReadCompare(project, "timelineResolutionHeight", {tostring(height)},
-        function(v) return tonumber(v) == height end, "Timeline Height")
+local function configureColorManagement(project)
+    setStage("Project Settings / Color Management")
     setReadCompare(project, "colorScienceMode", {"davinciYRGBColorManagedv2", "davinciYRGBColorManaged"},
         function(v) return contains(v, "color") and contains(v, "managed") end, "DaVinci YRGB Color Managed")
     setReadCompare(project, "rcmPresetMode", {"Custom"}, function(v) return contains(v, "custom") end, "RCM Custom")
@@ -312,7 +291,7 @@ local function configureProject(project, profile, initial)
         function(v) return contains(v, "rec.709") or contains(v, "rec709") end, "Output Rec.709")
     setReadCompare(project, "colorSpaceOutputGamma", {"Gamma 2.4", "Gamma2.4"},
         function(v) return contains(v, "2.4") end, "Output Gamma 2.4")
-    logLine("Project Settings=SUCCESS")
+    logLine("Color Management=SUCCESS")
 end
 
 local function verifyFinalSettings(project, profile)
@@ -513,8 +492,9 @@ local function main()
     local profile = loadRuntimeProfile()
     local resolveObject = acquireResolve()
     local manager, project = acquireProject(resolveObject, profile)
-    local initial = recordInitialSettings(project)
-    configureProject(project, profile, initial)
+    recordInitialSettings(project)
+    applyProjectPresetBaseline(project, profile)
+    configureColorManagement(project)
     verifyFinalSettings(project, profile)
     local mediaPool, clip, sourcePath = ensureOneClip(project, profile)
     setClipInput(project, clip)

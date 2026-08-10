@@ -16,7 +16,7 @@ This does not prove that Resolve's media APIs reject Unicode. Pass the original 
 
 A real diagnostic set Timeline FPS first, after which `timelinePlaybackFrameRate` returned `false` for both `50` and `50.000` and continued to read `24`. A second test used a new empty project and tried Playback first: `"50"`, `"50.0"`, and `"50.000"` all returned `false`, with readback fixed at 24. No media had been imported in either test.
 
-The installed official scripting README enumerates `timelineFrameRate` as writable but not `timelinePlaybackFrameRate`. Treat Playback FPS as a gate: first read it, optionally apply only an explicitly configured and previously verified Project Preset, and read it again. If it still differs, stop before Timeline FPS, resolution, color management, or import. Do not keep trying undocumented values. Preserve inconsistent projects as fault evidence.
+The installed official scripting README enumerates `timelineFrameRate` as writable but not `timelinePlaybackFrameRate`. Do not keep trying undocumented values. Select an exact, human-verified Project Format preset in the private runtime; the diagnostic calls `Project:SetPreset()` and immediately reads back Playback FPS, Timeline FPS, width, and height. A missing preset, `false` return, or mismatch stops before color management or import. Different confirmed formats need different verified presets; no preset name is universal. Preserve inconsistent projects as fault evidence.
 
 ## ImportMedia returns no clip
 

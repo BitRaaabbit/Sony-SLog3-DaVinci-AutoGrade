@@ -8,8 +8,8 @@ return {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
         allow_load_existing = false,
-        -- Optional. Use only after a Resolve Project Preset has been manually
-        -- verified to establish the required Playback FPS in a fresh project.
+        -- Required. Select a human-verified Project Format preset matching the
+        -- confirmed batch resolution and frame rate; never guess this name.
         preset_name = ""
     },
     paths = {

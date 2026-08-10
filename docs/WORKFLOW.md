@@ -18,8 +18,8 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 2. loads and validates the runtime profile;
 3. acquires Resolve with `app:GetResolve()`;
 4. creates or loads the exact isolated project;
-5. records untouched initial settings and verifies Playback FPS before setting and reading back Timeline FPS;
-6. configures the fixed Sony S-Log3 color-managed transform;
+5. records untouched initial settings, applies the exact verified Project Format preset declared by the runtime, and reads back Playback FPS, Timeline FPS, width, and height;
+6. only after that gate passes, configures and reads back the fixed Sony S-Log3 color-managed transform;
 7. imports only the first declared source;
 8. creates one diagnostic timeline;
 9. saves the project and stages a collision-safe DRP;
@@ -27,7 +27,7 @@ Run `Sony SLog3 Diagnostic` from Resolve's internal Workspace menu. It:
 
 Do not continue if the diagnostic report contains an error.
 
-Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting("timelinePlaybackFrameRate", ...)` is called in a fresh empty project, even though the same key is readable. The installed official scripting README explicitly enumerates `timelineFrameRate` as writable but does not enumerate `timelinePlaybackFrameRate`. Do not brute-force additional values. If the initial Playback FPS differs, use a Resolve Project Preset that was manually verified in a disposable empty project and name it in the private runtime profile, or preconfigure a new empty project manually. The diagnostic must still read back the exact target before media import.
+Resolve 20.3.2 Free has been observed to return `false` when `Project:SetSetting("timelinePlaybackFrameRate", ...)` is called in a fresh empty project, even though the same key is readable. `Project:GetSetting()` therefore does not imply that the corresponding property is writable through `Project:SetSetting()`. Do not brute-force additional values. Create and manually verify a Project Format preset for each confirmed format that is actually needed (for example 4K50, 4K59.94, 4K25, or 1080p50), declare its exact name in the private runtime, call the documented `Project:SetPreset()`, and read back all four format values. A missing preset, failed API return, or mismatch stops before color management and media import. Presets establish only Project Format; the script continues to own and verify the color pipeline separately.
 
 ## 4. Compatibility and image review
 
