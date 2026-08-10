@@ -84,6 +84,22 @@ local function numberEquals(value, expected)
     return number ~= nil and math.abs(number - expected) < 0.001
 end
 
+local function uniqueStrings(values)
+    local result, seen = {}, {}
+    for _, value in ipairs(values) do
+        local text = tostring(value)
+        if not seen[text] then result[#result + 1] = text; seen[text] = true end
+    end
+    return result
+end
+
+local function frameRateCandidates(fps)
+    if math.abs(fps - math.floor(fps + 0.5)) < 0.000001 then
+        return uniqueStrings({string.format("%.0f", fps), string.format("%.1f", fps), string.format("%.3f", fps)})
+    end
+    return uniqueStrings({tostring(fps), string.format("%.3f", fps)})
+end
+
 local function tracebackHandler(errorValue)
     local message = tostring(errorValue)
     if debug and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -170,6 +186,9 @@ local function acquireProject(resolveObject, profile)
     local target = profile.project.name
     local current = manager:GetCurrentProject()
     if current and current:GetName() == target then
+        if profile.project.allow_load_existing ~= true then
+            fail("Current target project already exists but allow_load_existing is false; fresh-project validation refused reuse.")
+        end
         state.project_name = target
         logLine("Project=REUSE_CURRENT_TARGET")
         return manager, current
@@ -195,6 +214,23 @@ local function acquireProject(resolveObject, profile)
     return manager, current
 end
 
+local function recordInitialSettings(project)
+    setStage("Project Settings / Initial State")
+    logLine("INITIAL SETTINGS")
+    local keys = {
+        "timelinePlaybackFrameRate",
+        "timelineFrameRate",
+        "timelineResolutionWidth",
+        "timelineResolutionHeight"
+    }
+    for _, key in ipairs(keys) do
+        local readOk, actual = pcall(function() return project:GetSetting(key) end)
+        logValue("initial." .. key .. ".read_call_ok", readOk)
+        logValue("initial." .. key .. ".read_back", actual)
+        if not readOk then fail("Initial GetSetting failed for " .. key .. ": " .. tostring(actual)) end
+    end
+end
+
 local function setReadCompare(project, key, candidates, validator, label)
     setStage("Project Settings / " .. label)
     for _, candidate in ipairs(candidates) do
@@ -217,11 +253,12 @@ local function configureProject(project, profile)
     local width = tonumber(profile.batch.width)
     local height = tonumber(profile.batch.height)
     local fps = tonumber(profile.batch.frame_rate)
+    local fpsCandidates = frameRateCandidates(fps)
 
     -- REG-011: playback must be set and verified before timeline frame rate.
-    setReadCompare(project, "timelinePlaybackFrameRate", {tostring(fps)},
+    setReadCompare(project, "timelinePlaybackFrameRate", fpsCandidates,
         function(v) return numberEquals(v, fps) end, "Playback Frame Rate")
-    setReadCompare(project, "timelineFrameRate", {tostring(fps)},
+    setReadCompare(project, "timelineFrameRate", fpsCandidates,
         function(v) return numberEquals(v, fps) end, "Timeline Frame Rate")
     setReadCompare(project, "timelineResolutionWidth", {tostring(width)},
         function(v) return tonumber(v) == width end, "Timeline Width")
@@ -247,6 +284,41 @@ local function configureProject(project, profile)
     setReadCompare(project, "colorSpaceOutputGamma", {"Gamma 2.4", "Gamma2.4"},
         function(v) return contains(v, "2.4") end, "Output Gamma 2.4")
     logLine("Project Settings=SUCCESS")
+end
+
+local function verifyFinalSettings(project, profile)
+    setStage("Project Settings / Final Verification")
+    logLine("FINAL SETTINGS")
+    local width = tonumber(profile.batch.width)
+    local height = tonumber(profile.batch.height)
+    local fps = tonumber(profile.batch.frame_rate)
+    local checks = {
+        {"timelinePlaybackFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineFrameRate", function(v) return numberEquals(v, fps) end},
+        {"timelineResolutionWidth", function(v) return tonumber(v) == width end},
+        {"timelineResolutionHeight", function(v) return tonumber(v) == height end},
+        {"colorScienceMode", function(v) return contains(v, "color") and contains(v, "managed") end},
+        {"rcmPresetMode", function(v) return contains(v, "custom") end},
+        {"isAutoColorManage", function(v) return tostring(v) == "0" or normalize(v) == "false" end},
+        {"separateColorSpaceAndGamma", function(v) return tostring(v) == "1" or normalize(v) == "true" end},
+        {"colorSpaceInput", function(v) return contains(v, "s-gamut3.cine") end},
+        {"colorSpaceInputGamma", function(v) return contains(v, "s-log3") end},
+        {"colorSpaceTimeline", function(v) return contains(v, "davinci") and (contains(v, "widegamut") or contains(v, "wg")) end},
+        {"colorSpaceTimelineGamma", function(v) return contains(v, "intermediate") end},
+        {"colorSpaceOutput", function(v) return contains(v, "rec.709") or contains(v, "rec709") end},
+        {"colorSpaceOutputGamma", function(v) return contains(v, "2.4") end}
+    }
+    for _, entry in ipairs(checks) do
+        local key, validator = entry[1], entry[2]
+        local readOk, actual = pcall(function() return project:GetSetting(key) end)
+        local matched = readOk and validator(actual)
+        logValue("final." .. key .. ".read_call_ok", readOk)
+        logValue("final." .. key .. ".read_back", actual)
+        logValue("final." .. key .. ".compare", matched and "MATCH" or "MISMATCH")
+        if not matched then fail("Final project setting verification failed for " .. key .. "; actual=" .. tostring(actual)) end
+        state.settings[key] = tostring(actual)
+    end
+    logLine("FINAL SETTINGS=ALL MATCH")
 end
 
 local function clipPath(clip)
@@ -412,7 +484,9 @@ local function main()
     local profile = loadRuntimeProfile()
     local resolveObject = acquireResolve()
     local manager, project = acquireProject(resolveObject, profile)
+    recordInitialSettings(project)
     configureProject(project, profile)
+    verifyFinalSettings(project, profile)
     local mediaPool, clip, sourcePath = ensureOneClip(project, profile)
     setClipInput(project, clip)
     ensureTimeline(project, mediaPool, clip, sourcePath, profile)
