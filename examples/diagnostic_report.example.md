@@ -7,7 +7,14 @@
 - Timeline FPS set/readback: 25.000 / 25.000
 - Resolution set/readback: 1920×1080 / 1920×1080
 - Color management: Sony S-Gamut3.Cine / S-Log3 → DaVinci Wide Gamut / Intermediate → Rec.709 Gamma 2.4
-- Imported sources: first declared clip only
+- Original Source: `C:/Example/ReadOnlySource/SONY_SLOG3_CLIP_001.MP4`
+- Resolve Working Media: `C:/Example/WorkingMedia/SONY_SLOG3_CLIP_001_DNxHR_HQX.mov`
+- Original Metadata Policy: `FROM_VERIFIED_ORIGINAL_SOURCE_METADATA`
+- Compatibility Reason: `UNSUPPORTED_NATIVE_VIDEO_DECODE`
+- Range Transform: `FULL_TO_LIMITED_NORMALIZATION`
+- Signal Equivalence: `PASS`
+- Working Media Video Decode: `PASS`
+- Imported working media: first declared mapping only
 - Timeline: one clip
 - SaveProject: Success
 - DRP staging: collision-safe ASCII path

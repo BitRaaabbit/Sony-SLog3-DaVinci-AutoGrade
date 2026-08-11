@@ -105,6 +105,23 @@ local function loadProfile()
     if p.authorization.start_rendering~=true then fail("start_rendering is not explicitly authorized.") end
     if not p.paths or tostring(p.paths.input_dir or "")=="" or tostring(p.paths.output_dir or "")=="" then fail("Missing paths.") end
     if pathKey(p.paths.input_dir)==pathKey(p.paths.output_dir) then fail("Input and output paths must differ.") end
+    if p.batch.media_mappings~=nil then
+        if type(p.batch.media_mappings)~="table"then fail("media_mappings must be a table.")end
+        for _,mapping in ipairs(p.batch.media_mappings)do
+            if mapping.working_media_required==true then
+                if tostring(mapping.signal_equivalence_status or "")~="PASS"then
+                    fail("SIGNAL_EQUIVALENCE_GATE blocks compatibility working media.")
+                end
+                if tostring(mapping.resolve_decode_status or "")~="PASS"then
+                    fail("WORKING_MEDIA_VIDEO_DECODE gate has not passed in Resolve.")
+                end
+                if tostring(mapping.working_file or "")==""then fail("Required working_file is missing.")end
+                if normalize(mapping.original_gamma)~=normalize("S-Log3")or normalize(mapping.original_primaries)~=normalize("Sony S-Gamut3.Cine")then
+                    fail("Working-media Input Color Policy is not backed by verified original metadata.")
+                end
+            end
+        end
+    end
     return p
 end
 
@@ -233,6 +250,25 @@ local function selectedFiles(p)
     return selected
 end
 
+local function importPathForOriginal(p,name)
+    local mappings=(p.batch and p.batch.media_mappings)or{}
+    for _,mapping in ipairs(mappings)do
+        if normalize(basename(mapping.original_file))==normalize(name)then
+            if mapping.working_media_required==true then
+                value("working_mapping."..normalize(name)..".policy","FROM_VERIFIED_ORIGINAL_SOURCE_METADATA")
+                value("working_mapping."..normalize(name)..".compatibility_reason",mapping.compatibility_reason)
+                value("working_mapping."..normalize(name)..".range_transform",mapping.range_transform)
+                return tostring(mapping.working_file)
+            end
+            return tostring(mapping.original_file)
+        end
+    end
+    if type(p.batch.media_mappings)=="table"and #p.batch.media_mappings>0 then
+        fail("No explicit Original → Working mapping exists for selected source: "..tostring(name))
+    end
+    return tostring(p.paths.input_dir):gsub("[\\/]$","").."/"..name
+end
+
 local function referenceItem(project,p)
     stage("Approved Reference Grade")
     local timeline=findTimeline(project,p.look.reference_timeline);if not timeline then fail("Reference timeline is missing.")end
@@ -244,9 +280,9 @@ end
 
 local function createTargets(project,p,files)
     stage("Target Timelines")
-    local entries={};local inputRoot=tostring(p.paths.input_dir):gsub("[\\/]$","")
+    local entries={}
     for _,name in ipairs(files)do
-        local fullPath=inputRoot.."/"..name;local clip=importClip(project,fullPath)
+        local fullPath=importPathForOriginal(p,name);local clip=importClip(project,fullPath)
         verifyClipInput(project,clip,p)
         local timelineName="AUTO_"..stem(name).."_"..tostring(p.look.name or "NeutralSafe"):gsub("[^%w]","")
         local timeline=findTimeline(project,timelineName)

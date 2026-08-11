@@ -19,6 +19,27 @@ local state = {
     profile = {},
     settings = {},
     imported_file = "",
+    original_source = "",
+    resolve_working_media = "",
+    working_media_required = false,
+    working_media_mapping = "NOT_CHECKED",
+    working_media_import = "NOT_STARTED",
+    working_media_video_decode = "NOT_TESTED",
+    compatibility_reason = "NONE",
+    range_transform = "NONE",
+    signal_equivalence_status = "NOT_APPLICABLE",
+    original_metadata_policy = "NOT_VERIFIED",
+    working_resolution = "",
+    working_fps = "",
+    working_video_codec = "",
+    working_codec_declared = "",
+    working_pixel_format_declared = "",
+    working_width_declared = "",
+    working_height_declared = "",
+    working_frame_rate_declared = "",
+    working_frames_declared = "",
+    working_duration_declared = "",
+    working_sha256_declared = "",
     timeline = "",
     drp_path = "",
     source_metadata_status = "NOT_VERIFIED",
@@ -98,6 +119,17 @@ local function pathKey(value) return string.lower(tostring(value or ""):gsub("\\
 local function basename(path)
     local normalized = tostring(path or ""):gsub("\\", "/")
     return normalized:match("([^/]+)$") or normalized
+end
+local function dirname(path)
+    local normalized = tostring(path or ""):gsub("\\", "/"):gsub("/+$", "")
+    return normalized:match("^(.*)/[^/]+$") or ""
+end
+local function joinPath(root, name)
+    return tostring(root or ""):gsub("[\\/]$", "") .. "/" .. tostring(name or "")
+end
+local function isAbsolutePath(path)
+    local value = tostring(path or ""):gsub("\\", "/")
+    return value:match("^%a:/") ~= nil or value:match("^//") ~= nil or value:match("^/") ~= nil
 end
 local function numberEquals(value, expected)
     local number = tonumber(value)
@@ -179,6 +211,58 @@ local function fileExists(path)
     return size ~= nil
 end
 
+local function firstMediaMapping(profile)
+    local mappings = profile.batch and profile.batch.media_mappings
+    if type(mappings) == "table" and #mappings > 0 then
+        local entry = mappings[1]
+        local required = entry.working_media_required == true
+        return {
+            original_file = tostring(entry.original_file or ""),
+            working_file = tostring(entry.working_file or ""),
+            import_file = required and tostring(entry.working_file or "") or tostring(entry.original_file or ""),
+            working_media_required = required,
+            compatibility_reason = tostring(entry.compatibility_reason or ""),
+            original_gamma = tostring(entry.original_gamma or ""),
+            original_primaries = tostring(entry.original_primaries or ""),
+            range_transform = tostring(entry.range_transform or ""),
+            signal_equivalence_status = tostring(entry.signal_equivalence_status or ""),
+            resolve_decode_status = tostring(entry.resolve_decode_status or ""),
+            working_codec = tostring(entry.working_codec or ""),
+            working_pixel_format = tostring(entry.working_pixel_format or ""),
+            working_width = tonumber(entry.working_width),
+            working_height = tonumber(entry.working_height),
+            working_frame_rate = tonumber(entry.working_frame_rate),
+            working_frames = tonumber(entry.working_frames),
+            working_duration = tonumber(entry.working_duration),
+            working_sha256 = tostring(entry.working_sha256 or ""),
+            declared = true
+        }
+    end
+    local firstName = tostring(profile.batch.source_files[1])
+    local original = joinPath(profile.paths.input_dir, firstName)
+    return {
+        original_file = original,
+        working_file = original,
+        import_file = original,
+        working_media_required = false,
+        compatibility_reason = "NONE",
+        original_gamma = tostring(profile.batch.gamma or ""),
+        original_primaries = tostring(profile.batch.primaries or ""),
+        range_transform = "NONE",
+        signal_equivalence_status = "NOT_APPLICABLE",
+        resolve_decode_status = "NOT_APPLICABLE",
+        working_codec = "",
+        working_pixel_format = "",
+        working_width = tonumber(profile.batch.width),
+        working_height = tonumber(profile.batch.height),
+        working_frame_rate = tonumber(profile.batch.frame_rate),
+        working_frames = nil,
+        working_duration = nil,
+        working_sha256 = "",
+        declared = false
+    }
+end
+
 local function tracebackHandler(errorValue)
     local message = tostring(errorValue)
     if debug and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -241,6 +325,39 @@ local function loadRuntimeProfile()
         if seen[key] then fail("Duplicate source filename: " .. tostring(fileName)) end
         seen[key] = true
     end
+    if profile.batch.media_mappings ~= nil then
+        if type(profile.batch.media_mappings) ~= "table" or #profile.batch.media_mappings < 1 then
+            fail("batch.media_mappings must be a non-empty array when declared.")
+        end
+        local mappingOriginals = {}
+        for index, entry in ipairs(profile.batch.media_mappings) do
+            if type(entry) ~= "table" then fail("media_mappings entry must be a table: " .. tostring(index)) end
+            local original = tostring(entry.original_file or "")
+            local working = tostring(entry.working_file or "")
+            if not isAbsolutePath(original) then fail("media_mappings original_file must be an absolute path.") end
+            if not seen[normalize(basename(original))] then fail("Mapped original_file is not in source_files: " .. original) end
+            if index == 1 and normalize(basename(original)) ~= normalize(profile.batch.source_files[1]) then
+                fail("The first media mapping must correspond to the first diagnostic source_file.")
+            end
+            if mappingOriginals[pathKey(original)] then fail("Duplicate original_file mapping: " .. original) end
+            mappingOriginals[pathKey(original)] = true
+            if normalize(entry.original_gamma) ~= normalize("S-Log3") then fail("Mapping original_gamma is not S-Log3.") end
+            if normalize(entry.original_primaries) ~= normalize("Sony S-Gamut3.Cine") then
+                fail("Mapping original_primaries is not Sony S-Gamut3.Cine.")
+            end
+            if entry.working_media_required == true then
+                if not isAbsolutePath(working) then fail("Required working_file must be an absolute path.") end
+                if pathKey(original) == pathKey(working) then fail("Original and working media paths must differ.") end
+                if tostring(entry.compatibility_reason or "") == "" then fail("Required working media needs compatibility_reason.") end
+                if tostring(entry.range_transform or "") ~= "FULL_TO_LIMITED_NORMALIZATION" then
+                    fail("Required DNxHR working media must declare FULL_TO_LIMITED_NORMALIZATION.")
+                end
+                if tostring(entry.signal_equivalence_status or "") ~= "PASS" then
+                    fail("SIGNAL_EQUIVALENCE_GATE: required working media has not passed signal equivalence.")
+                end
+            end
+        end
+    end
     if not profile.diagnostic or profile.diagnostic.first_clip_only ~= true then fail("diagnostic.first_clip_only must be true.") end
     if tostring(profile.diagnostic.timeline_name or "") == "" then fail("Missing diagnostic.timeline_name.") end
     state.profile = profile
@@ -256,6 +373,30 @@ local function loadRuntimeProfile()
     logValue("preflight.primaries", profile.batch.primaries)
     logValue("preflight.camera_report_only", profile.batch.camera_model or "UNKNOWN")
     logValue("preflight.source_count", #profile.batch.source_files)
+    local firstMapping = firstMediaMapping(profile)
+    state.original_source = firstMapping.original_file
+    state.resolve_working_media = firstMapping.import_file
+    state.working_media_required = firstMapping.working_media_required
+    state.compatibility_reason = firstMapping.compatibility_reason
+    state.range_transform = firstMapping.range_transform
+    state.signal_equivalence_status = firstMapping.signal_equivalence_status
+    state.original_metadata_policy = "FROM_VERIFIED_ORIGINAL_SOURCE_METADATA"
+    state.working_media_mapping = firstMapping.working_media_required and "DECLARED" or "ORIGINAL_DIRECT"
+    state.working_codec_declared = firstMapping.working_codec
+    state.working_pixel_format_declared = firstMapping.working_pixel_format
+    state.working_width_declared = tostring(firstMapping.working_width or "")
+    state.working_height_declared = tostring(firstMapping.working_height or "")
+    state.working_frame_rate_declared = tostring(firstMapping.working_frame_rate or "")
+    state.working_frames_declared = tostring(firstMapping.working_frames or "")
+    state.working_duration_declared = tostring(firstMapping.working_duration or "")
+    state.working_sha256_declared = firstMapping.working_sha256
+    logValue("preflight.original_source", state.original_source)
+    logValue("preflight.resolve_working_media", state.resolve_working_media)
+    logValue("preflight.working_media_required", state.working_media_required)
+    logValue("preflight.compatibility_reason", state.compatibility_reason)
+    logValue("preflight.range_transform", state.range_transform)
+    logValue("preflight.signal_equivalence_status", state.signal_equivalence_status)
+    logValue("preflight.original_metadata_policy", state.original_metadata_policy)
     logLine("Runtime Profile=SUCCESS")
     return profile
 end
@@ -696,6 +837,68 @@ local function readNamedClipProperty(item, propertyName, label)
     return callOk and tostring(value or "") or ""
 end
 
+local function mediaStoragePathExists(resolveObject, path, label)
+    local directory = dirname(path)
+    logValue(label .. ".path", path)
+    logValue(label .. ".directory", directory)
+    if directory == "" then fail(label .. " has no parent directory.") end
+    local storage = resolveObject:GetMediaStorage()
+    if not storage then fail("GetMediaStorage returned nil during " .. label) end
+    local callOk, files = pcall(function() return storage:GetFileList(directory) end)
+    logValue(label .. ".get_file_list_call_ok", callOk)
+    logValue(label .. ".get_file_list_return_type", type(files))
+    if not callOk or type(files) ~= "table" then fail(label .. " MediaStorage:GetFileList failed.") end
+    dumpRawCollection(string.upper(label) .. " FILE LIST", files)
+    local exact = false
+    for index, candidate in ipairs(files) do
+        logValue(label .. ".candidate[" .. tostring(index) .. "]", candidate)
+        if type(candidate) == "string" and pathKey(candidate) == pathKey(path) then exact = true end
+    end
+    logValue(label .. ".exact_path_exists", exact)
+    if not exact then fail(label .. " exact declared path is not visible through Resolve MediaStorage.") end
+    return true
+end
+
+local function propertyNumber(value)
+    return tonumber(tostring(value or ""):match("[%d%.]+"))
+end
+
+local function resolutionMatches(value, width, height)
+    local numbers = {}
+    for number in tostring(value or ""):gmatch("%d+") do numbers[#numbers + 1] = tonumber(number) end
+    return #numbers >= 2 and numbers[1] == tonumber(width) and numbers[2] == tonumber(height)
+end
+
+local function validateWorkingClipProperties(clip, mapping)
+    setStage("Working Media Decode Properties")
+    local label = "working_media"
+    local actualPath = readNamedClipProperty(clip, "File Path", label)
+    local resolution = readNamedClipProperty(clip, "Resolution", label)
+    local fps = readNamedClipProperty(clip, "FPS", label)
+    local videoCodec = readNamedClipProperty(clip, "Video Codec", label)
+    local itemType = readNamedClipProperty(clip, "Type", label)
+    state.working_resolution = resolution
+    state.working_fps = fps
+    state.working_video_codec = videoCodec
+    logValue("working_media.item_type", itemType)
+    if pathKey(actualPath) ~= pathKey(mapping.import_file) then fail("Working Media File Path does not match the declared mapping.") end
+    if resolution ~= "" and not resolutionMatches(resolution, mapping.working_width or state.profile.batch.width,
+            mapping.working_height or state.profile.batch.height) then
+        fail("Working Media Resolution conflicts with the declared mapping.")
+    end
+    if fps ~= "" and not numberEquals(propertyNumber(fps), mapping.working_frame_rate or state.profile.batch.frame_rate) then
+        fail("Working Media FPS conflicts with the declared mapping.")
+    end
+    if mapping.working_media_required and videoCodec ~= "" and not contains(videoCodec, "dnx") then
+        fail("Working Media Video Codec is not DNxHR/DNxHD: " .. videoCodec)
+    end
+    if mapping.working_media_required and videoCodec == "" then
+        append(state.warnings, "Working Media Video Codec property is unavailable; TimelineItem video validation remains the decisive decode gate.")
+    end
+    state.working_media_import = "PASS"
+    logLine("WORKING MEDIA IMPORT=PASS")
+end
+
 local function classifyMediaPoolItems(rawItems, expectedPath, projectTimelineName, label)
     local items, validatedCount = validatedSequenceItems(rawItems, function(item)
         if type(item) ~= "userdata" then return false, "expected MediaPoolItem userdata" end
@@ -804,7 +1007,7 @@ local function validateMediaPoolClassification(classified, expectedTimelineCount
     return classified.exact_source and classified.exact_source.item or nil
 end
 
-local function validateTimelineItems(timeline, expectedPath, label)
+local function validateTimelineItems(timeline, expectedPath, label, workingMediaRequired)
     local callOk, rawItems = pcall(function() return timeline:GetItemListInTrack("video", 1) end)
     logValue(label .. ".call_ok", callOk)
     logValue(label .. ".return_type", type(rawItems))
@@ -833,7 +1036,13 @@ local function validateTimelineItems(timeline, expectedPath, label)
     logValue(label .. ".media_pool_item_path", actualPath)
     logValue(label .. ".exact_source", pathKey(actualPath) == pathKey(expectedPath))
     if pathKey(actualPath) ~= pathKey(expectedPath) then fail("Timeline source verification failed.") end
-    logLine("TIMELINE=ONE_EXACT_SOURCE")
+    if workingMediaRequired then
+        state.working_media_video_decode = "PASS"
+        logLine("WORKING_MEDIA_VIDEO_DECODE=PASS")
+        logLine("TIMELINE=ONE_EXACT_WORKING_SOURCE")
+    else
+        logLine("TIMELINE=ONE_EXACT_SOURCE")
+    end
     return items[1]
 end
 
@@ -886,8 +1095,9 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
         if tostring(item.JobId or "") == "" then return false, "missing JobId" end
         return true
     end, "resume_render_job_list")
-    local firstName = tostring(profile.batch.source_files[1])
-    local expectedPath = tostring(profile.paths.input_dir):gsub("[\\/]$", "") .. "/" .. firstName
+    local mapping = firstMediaMapping(profile)
+    local firstName = basename(mapping.original_file)
+    local expectedPath = mapping.import_file
     local timelineCount, existingTimeline, timelineName = projectTimelineState(
         project, profile.diagnostic.timeline_name, "resume_project_timeline")
     local classified = classifyMediaPoolItems(clips, expectedPath, timelineName, "resume_media_pool")
@@ -904,7 +1114,7 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
     if renderJobCount ~= 0 then fail("Resume target contains render jobs.") end
     state.imported_file = firstName
     if timelineCount == 1 then
-        validateTimelineItems(existingTimeline, expectedPath, "resume_timeline_item_list")
+        validateTimelineItems(existingTimeline, expectedPath, "resume_timeline_item_list", mapping.working_media_required)
         state.timeline = tostring(profile.diagnostic.timeline_name)
         state.bootstrap_status = "REUSED_EXISTING_DIAGNOSTIC_TIMELINE"
         append(state.warnings, "REUSE_EXISTING_DIAGNOSTIC_TIMELINE: the sole existing timeline was validated as the exact first source and will not be recreated.")
@@ -917,7 +1127,7 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
     return project, mediaPool, exactClip, expectedPath
 end
 
-local function ensureOneClip(project, profile)
+local function ensureOneClip(resolveObject, project, profile)
     setStage("Media Pool")
     local mediaPool, root, clips = rootObjects(project)
     local folders = root:GetSubFolderList() or {}
@@ -927,8 +1137,23 @@ local function ensureOneClip(project, profile)
         if type(item) ~= "userdata" then return false, "expected Folder userdata" end
         return true
     end, "media_pool_subfolder_list")
-    local firstName = profile.batch.source_files[1]
-    local fullPath = tostring(profile.paths.input_dir):gsub("[\\/]$", "") .. "/" .. firstName
+    local mapping = firstMediaMapping(profile)
+    local firstName = basename(mapping.original_file)
+    local fullPath = mapping.import_file
+    setStage("Original and Working Media Mapping")
+    mediaStoragePathExists(resolveObject, mapping.original_file, "original_source_media")
+    if mapping.working_media_required then mediaStoragePathExists(resolveObject, mapping.working_file, "resolve_working_media") end
+    logValue("mapping.original_source", mapping.original_file)
+    logValue("mapping.resolve_working_media", mapping.import_file)
+    logValue("mapping.original_gamma", mapping.original_gamma)
+    logValue("mapping.original_primaries", mapping.original_primaries)
+    logValue("mapping.compatibility_reason", mapping.compatibility_reason)
+    logValue("mapping.range_transform", mapping.range_transform)
+    logValue("mapping.signal_equivalence_status", mapping.signal_equivalence_status)
+    logValue("mapping.resolve_data_levels_policy", "CODEC_NATIVE_VIDEO_LEVELS")
+    state.working_media_mapping = mapping.working_media_required and "VERIFIED" or "ORIGINAL_DIRECT"
+    logLine("WORKING MEDIA MAPPING=VERIFIED")
+    setStage("Media Pool")
     local timelineCount, _, timelineName = projectTimelineState(project, profile.diagnostic.timeline_name, "media_pool_project_timeline")
     local before = classifyMediaPoolItems(clips, fullPath, timelineName, "media_pool_before")
     local clip = validateMediaPoolClassification(before, timelineCount, false, "MEDIA POOL PRE-IMPORT")
@@ -958,16 +1183,17 @@ local function ensureOneClip(project, profile)
     local afterClassification = classifyMediaPoolItems(after, fullPath, timelineName, "media_pool_after")
     clip = validateMediaPoolClassification(afterClassification, timelineCount, true, "MEDIA POOL")
     state.imported_file = firstName
+    validateWorkingClipProperties(clip, mapping)
     logLine("Media Import=SUCCESS")
     logLine("Media Pool=ONE_EXACT_SOURCE")
-    return mediaPool, clip, fullPath
+    return mediaPool, clip, fullPath, mapping
 end
 
-local function evaluateInputPolicy(project, clip, profile)
+local function evaluateInputPolicy(project, clip, profile, mapping)
     setStage("Input Color Space Policy")
     local metadataVerified = tostring(profile.batch.metadata_confirmation or "") ~= ""
-        and normalize(profile.batch.gamma) == normalize("S-Log3")
-        and normalize(profile.batch.primaries) == normalize("Sony S-Gamut3.Cine")
+        and normalize(mapping.original_gamma) == normalize("S-Log3")
+        and normalize(mapping.original_primaries) == normalize("Sony S-Gamut3.Cine")
     local homogeneousVerified = metadataVerified
         and profile.batch.homogeneous_metadata_verified == true
         and type(profile.batch.source_files) == "table" and #profile.batch.source_files > 0
@@ -980,6 +1206,9 @@ local function evaluateInputPolicy(project, clip, profile)
     state.project_input_color_space = tostring(projectInput or "")
     state.project_input_gamma = tostring(projectGamma or "")
     logValue("input_policy.source_metadata", state.source_metadata_status)
+    logValue("input_policy.original_source", mapping.original_file)
+    logValue("input_policy.resolve_working_media", mapping.import_file)
+    logValue("input_policy.original_metadata_policy", state.original_metadata_policy)
     logValue("input_policy.batch_homogeneity", state.batch_homogeneity)
     logValue("input_policy.project_input_color_space", projectInput)
     logValue("input_policy.project_input_gamma", projectGamma)
@@ -1052,7 +1281,9 @@ local function evaluateInputPolicy(project, clip, profile)
     state.per_clip_input_api = inheritanceEvidence and "PROJECT_INHERITANCE" or "UNAVAILABLE / EMPTY"
     state.per_clip_input_value = inheritanceEvidence and "Project" or ""
     state.effective_input_policy = "VERIFIED_PROJECT_DEFAULT"
-    state.input_confidence = "HIGH — homogeneous metadata plus verified project input"
+    state.input_confidence = mapping.working_media_required
+        and "HIGH — verified original metadata plus verified project input applied to compatibility working media"
+        or "HIGH — homogeneous metadata plus verified project input"
     append(state.warnings,
         "Per-clip Input Color Space is not exposed by the current Resolve scripting API. Effective input is accepted from independently verified homogeneous source metadata plus verified project-level input color management.")
     logLine("PER_CLIP_INPUT_API=" .. state.per_clip_input_api)
@@ -1067,7 +1298,7 @@ local function findTimeline(project, name)
     return nil
 end
 
-local function ensureTimeline(project, mediaPool, clip, sourcePath, profile)
+local function ensureTimeline(project, mediaPool, clip, sourcePath, profile, mapping)
     setStage("Timeline")
     local name = profile.diagnostic.timeline_name
     local timeline = findTimeline(project, name)
@@ -1077,7 +1308,7 @@ local function ensureTimeline(project, mediaPool, clip, sourcePath, profile)
     local reused = timeline ~= nil
     if not timeline then timeline = mediaPool:CreateTimelineFromClips(name, {clip}) end
     if not timeline then fail("CreateTimelineFromClips returned nil.") end
-    validateTimelineItems(timeline, sourcePath, "timeline_item_list")
+    validateTimelineItems(timeline, sourcePath, "timeline_item_list", mapping.working_media_required)
     if reused then logLine("REUSE_EXISTING_DIAGNOSTIC_TIMELINE") end
     local checks = {
         {"timelineResolutionWidth", tonumber(profile.batch.width)},
@@ -1115,6 +1346,25 @@ local function writeReport(tracebackText)
         "- Template path: `" .. state.template_path .. "`",
         "- Project: `" .. state.project_name .. "`",
         "- Imported first source: `" .. state.imported_file .. "`",
+        "- Original Source: `" .. state.original_source .. "`",
+        "- Resolve Working Media: `" .. state.resolve_working_media .. "`",
+        "- Working Media Required: `" .. tostring(state.working_media_required) .. "`",
+        "- Working Media Mapping: `" .. state.working_media_mapping .. "`",
+        "- Compatibility Reason: `" .. state.compatibility_reason .. "`",
+        "- Range Transform: `" .. state.range_transform .. "`",
+        "- Signal Equivalence: `" .. state.signal_equivalence_status .. "`",
+        "- Working Media Import: `" .. state.working_media_import .. "`",
+        "- Working Media Video Decode: `" .. state.working_media_video_decode .. "`",
+        "- Declared Working Codec: `" .. state.working_codec_declared .. "`",
+        "- Declared Working Pixel Format: `" .. state.working_pixel_format_declared .. "`",
+        "- Declared Working Geometry: `" .. state.working_width_declared .. "x" .. state.working_height_declared .. "`",
+        "- Declared Working FPS: `" .. state.working_frame_rate_declared .. "`",
+        "- Declared Working Frames: `" .. state.working_frames_declared .. "`",
+        "- Declared Working Duration: `" .. state.working_duration_declared .. "`",
+        "- Declared Working SHA-256: `" .. state.working_sha256_declared .. "`",
+        "- Resolve Working Resolution: `" .. state.working_resolution .. "`",
+        "- Resolve Working FPS: `" .. state.working_fps .. "`",
+        "- Resolve Working Video Codec: `" .. state.working_video_codec .. "`",
         "- Timeline: `" .. state.timeline .. "`",
         "- DRP staging: `" .. state.drp_path .. "`", "",
         "## Media Pool classification", "",
@@ -1122,6 +1372,7 @@ local function writeReport(tracebackText)
         "- Timeline MediaPoolItem count: `" .. tostring(state.media_pool_timeline_item_count) .. "`",
         "- Other MediaPoolItem count: `" .. tostring(state.media_pool_other_count) .. "`", "",
         "## Input policy", "",
+        "- Original Metadata Policy: `" .. state.original_metadata_policy .. "`",
         "- Source Metadata: `" .. state.source_metadata_status .. "`",
         "- Batch Homogeneity: `" .. state.batch_homogeneity .. "`",
         "- Project Input Color Space: `" .. state.project_input_color_space .. "`",
@@ -1187,9 +1438,9 @@ local function main()
     end
     configureColorManagement(project)
     verifyFinalSettings(project, profile)
-    local mediaPool, clip, sourcePath = ensureOneClip(project, profile)
-    evaluateInputPolicy(project, clip, profile)
-    ensureTimeline(project, mediaPool, clip, sourcePath, profile)
+    local mediaPool, clip, sourcePath, mapping = ensureOneClip(resolveObject, project, profile)
+    evaluateInputPolicy(project, clip, profile, mapping)
+    ensureTimeline(project, mediaPool, clip, sourcePath, profile, mapping)
 
     setStage("Save Project")
     local saved = manager:SaveProject()
@@ -1214,7 +1465,15 @@ local function main()
     logValue("OpenPage.edit.return", opened)
     if opened ~= true then fail("OpenPage(edit) did not return true.") end
     logLine("OpenPage=SUCCESS")
-    state.status = "SUCCESS_DIAGNOSTIC_READY"
+    if mapping.working_media_required then
+        if state.working_media_mapping ~= "VERIFIED" or state.working_media_import ~= "PASS"
+            or state.working_media_video_decode ~= "PASS" then
+            fail("Compatibility working-media success gates are incomplete.")
+        end
+        state.status = "SUCCESS_DNXHR_COMPATIBILITY_READY"
+    else
+        state.status = "SUCCESS_DIAGNOSTIC_READY"
+    end
 end
 
 local ok, tracebackText = xpcall(main, tracebackHandler)

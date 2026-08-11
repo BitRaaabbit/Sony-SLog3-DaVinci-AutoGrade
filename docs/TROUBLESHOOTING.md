@@ -30,6 +30,18 @@ Read `%TEMP%\SonySLog3AutoGrade\template_capture.log`. The current project must 
 
 Stop immediately. Record the requested path, `pcall` status, return type, and Media Pool contents. Do not install codecs, transcode, move source files, or import the rest of the batch.
 
+## Native source imports as audio only
+
+Treat an imported MediaPoolItem with the correct path but empty Resolution/Video Codec and no validated Video Track TimelineItem as `UNSUPPORTED_NATIVE_VIDEO_DECODE`, not as successful media import. Preserve the project as decode-failure evidence and do not modify the source.
+
+A compatibility transcode is allowed only through an explicit Original → Working mapping. The original remains read-only metadata authority. Before Resolve testing, require a private technical report proving codec, pixel format, geometry, FPS, frames, duration, audio, SHA-256, and `SIGNAL_EQUIVALENCE=PASS`. If full-range source is represented as limited-range DNxHR, record `FULL_TO_LIMITED_NORMALIZATION`; do not call it a colorspace conversion and do not force the DNxHR clip to Full levels.
+
+Use a fresh diagnostic project from the verified DRP. Import the exact working path and require one real Video Track TimelineItem linked back to that exact MediaPoolItem. `ImportMedia()` returning an object is not enough. Missing/incorrect Resolution, FPS, codec evidence, an audio-only timeline, or a mismatched path stops before grading or rendering.
+
+## Working DNxHR reports a bt709 matrix
+
+Do not interpret a DNxHR `color_space=bt709` matrix tag as proof of Rec.709 primaries or Gamma 2.4. A compatibility file may retain unspecified transfer and primaries while using the codec's legal YCbCr matrix/range representation. Project Input Color Space must still read back Sony S-Gamut3.Cine / S-Log3 from verified original metadata. Any explicit per-clip Input Color Space conflict remains a stop condition.
+
 ## Per-clip Input Color Space is empty
 
 The installed Resolve 20.3.2 README documents generic `GetClipProperty` and `SetClipProperty` methods, warns that some properties may be read-only or unavailable by context, and does not specifically enumerate Input Color Space as writable. Do not guess property aliases or keep calling `SetClipProperty` when readback is empty.

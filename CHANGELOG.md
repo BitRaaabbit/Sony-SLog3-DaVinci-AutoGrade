@@ -10,6 +10,7 @@
 - Added the Neutral Safe test-candidate policy without claiming permanent look parameters.
 - Added an Original Log → RCM Only → Neutral Safe → high-quality master → delivery codec display/LED diagnostic chain.
 - Added the private blank-DRP bootstrap as the recommended Project Format compatibility path; the exact-preset path remains optional.
+- Added an explicit `ORIGINAL_SOURCE_MEDIA` → `RESOLVE_WORKING_MEDIA` runtime mapping so decode-compatible mezzanine files cannot replace or redefine immutable camera metadata.
 
 ### Fixed
 
@@ -23,6 +24,8 @@
 - Replaced raw Timeline bridge-table length checks with raw diagnostics plus validated TimelineItem traversal, exact MediaPoolItem source verification, and safe reuse of one already-created diagnostic timeline.
 - Classified root MediaPoolItems as file-backed source, expected Timeline item, or unexpected object so a Timeline no longer inflates source-media count; added full property diagnostics and exact path/name gates.
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
+- Added `UNSUPPORTED_NATIVE_VIDEO_DECODE`, `COMPATIBILITY_TRANSCODE_REQUIRED`, `FULL_TO_LIMITED_NORMALIZATION`, and `SIGNAL_EQUIVALENCE_GATE` capability rules. Compatibility range representation is explicitly separated from creative grading and colorspace conversion.
+- Added a fail-closed working-media decode gate: exact mapped import, available Resolution/FPS/Video Codec evidence, one validated Video Track TimelineItem, and exact TimelineItem → MediaPoolItem → working-path verification are required for `SUCCESS_DNXHR_COMPATIBILITY_READY`.
 
 ### Safety
 

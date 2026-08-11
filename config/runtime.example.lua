@@ -42,6 +42,30 @@ return {
             "SONY_SLOG3_CLIP_001.MP4",
             "SONY_SLOG3_CLIP_002.MP4",
             "SONY_SLOG3_CLIP_003.MP4"
+        },
+        -- Optional compatibility-media mapping. Paths are absolute so the
+        -- authoritative camera source and Resolve working representation can
+        -- never be confused. Keep all real paths and hashes private.
+        media_mappings = {
+            {
+                original_file = "C:/Path/To/ReadOnlySource/SONY_SLOG3_CLIP_001.MP4",
+                working_file = "C:/Path/To/PrivateWorkingMedia/SONY_SLOG3_CLIP_001_DNxHR_HQX.mov",
+                working_media_required = true,
+                compatibility_reason = "UNSUPPORTED_NATIVE_VIDEO_DECODE",
+                original_gamma = "S-Log3",
+                original_primaries = "Sony S-Gamut3.Cine",
+                range_transform = "FULL_TO_LIMITED_NORMALIZATION",
+                signal_equivalence_status = "PASS",
+                resolve_decode_status = "NOT_TESTED",
+                working_codec = "DNxHR HQX",
+                working_pixel_format = "10-bit 4:2:2",
+                working_width = 1920,
+                working_height = 1080,
+                working_frame_rate = 25.0,
+                working_frames = 1000,
+                working_duration = 40.0,
+                working_sha256 = "PRIVATE_SHA256"
+            }
         }
     },
     diagnostic = {

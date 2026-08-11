@@ -20,7 +20,7 @@ External scripting access is not required. The workflow does not install codecs,
 
 `Sony SLog3 Template Capture.lua` exports a human-verified, completely blank Resolve project to a private, collision-safe DRP after checking Playback FPS, Timeline FPS, width, height, Media Pool, timelines, and render queue. It never changes project settings.
 
-`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile and validates one homogeneous batch. The recommended `drp_template` bootstrap imports the private blank DRP under a unique project name, rechecks its format and blank state, and stops on any mismatch. The optional `preset` bootstrap remains available only when `Project:GetPresetList()` exposes an exact verified preset. Project Format and color are deliberately separate: only after the bootstrap gate passes does the script configure and verify the fixed Sony color-management transform, import the first declared source, create one diagnostic timeline, save, and stop on Edit.
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile and validates one homogeneous batch. The recommended `drp_template` bootstrap imports the private blank DRP under a unique project name, rechecks its format and blank state, and stops on any mismatch. The optional `preset` bootstrap remains available only when `Project:GetPresetList()` exposes an exact verified preset. Project Format and color are deliberately separate. An optional Original → Working mapping keeps immutable camera metadata distinct from a Resolve-compatible mezzanine: Diagnostic imports the declared working path, retains the original Sony Input Color Policy, and proves video decode through one real Video Track TimelineItem before saving and stopping on Edit.
 
 `Sony SLog3 AutoGrade.lua` is gated behind all of the following:
 
@@ -33,6 +33,8 @@ External scripting access is not required. The workflow does not install codecs,
 - maximum three clips for a first test and ten clips per batch invocation.
 
 The automation copies a verified reference grade. It does not encode permanent Neutral Safe Primary values in code.
+
+Required compatibility media is fail-closed. A working file must pass signal-equivalence validation and a fresh Resolve video-decode diagnostic before AutoGrade can import it. Compatibility range normalization is not a creative grade or colorspace conversion, and a legal limited-range DNxHR file must not be forced to Full levels.
 
 ## Install
 
@@ -62,6 +64,8 @@ These are **test candidates**, not permanent defaults. A human must approve the 
 - Unknown or mixed gamma, primaries, frame rate, or resolution stops preflight.
 - Existing output is never silently overwritten.
 - A camera model never substitutes for reliable gamma/primaries confirmation.
+- Original source identity and Resolve working-media identity are never conflated; color policy always comes from verified original metadata.
+- `ImportMedia()` alone never proves video decode; a validated Video Track TimelineItem is mandatory.
 - Grading and delivery encoding are diagnosed separately.
 - Full batch processing requires a reviewed small-scale test.
 
