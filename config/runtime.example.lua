@@ -9,7 +9,8 @@ return {
     -- requiring a new Resolve menu entry for every commit.
     deployment = {
         logic_commit = "PUBLIC_COMMIT_SHORT_SHA",
-        logic_sha256 = "PUBLIC_SCRIPT_SHA256"
+        logic_sha256 = "PUBLIC_DIAGNOSTIC_ENTRY_SHA256",
+        reference_prep_sha256 = "PUBLIC_REFERENCE_PREP_SCRIPT_SHA256"
     },
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
@@ -124,6 +125,23 @@ return {
     diagnostic = {
         first_clip_only = true,
         timeline_name = "Sony_SLog3_Diagnostic"
+    },
+    -- Optional one-clip reference preparation mode. Set mode="reference_prep"
+    -- only after the exact compatibility project has passed Diagnostic.
+    color_test = {
+        status = "NOT_AUTHORIZED",
+        project_name = "Sony_SLog3_Verified_Compatibility_Project",
+        source_timeline = "Sony_SLog3_Diagnostic",
+        rcm_only_timeline = "Sony_SLog3_RCM_ONLY",
+        neutral_safe_timeline = "Sony_SLog3_NEUTRAL_SAFE_REFERENCE",
+        output_dir = "C:/Path/To/PrivateOutput/ReferenceTest",
+        output_preflight_status = "NOT_CHECKED",
+        a_output_basename = "A_RCM_ONLY_MASTER",
+        render_authorized = false,
+        render_limit = 1,
+        primary_grade_policy = "HUMAN_APPROVED_REFERENCE_ONLY",
+        grade_reproduction_policy = "SHA256_PINNED_DRX_APPLY",
+        same_project_copy_policy = "TIMELINE_ITEM_COPYGRADES"
     },
     look = {
         name = "Neutral Safe",

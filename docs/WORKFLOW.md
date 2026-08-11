@@ -72,7 +72,9 @@ Create a separate reference timeline and enter a conservative candidate with nat
 
 The final candidate becomes eligible only after explicit human approval. Record its reference timeline and exact node count in the private runtime profile.
 
-The official scripting API does not provide reliable native setters/readback for the complete requested primary-control set (Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint). Do not substitute CDL values or undocumented keys. If structured API support is unavailable, use a native UI path only when it can be controlled reliably and every displayed value can be read back; otherwise stop before adding a node or rendering.
+The official scripting API does not provide reliable native setters/readback for the complete requested primary-control set (Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint). Do not substitute CDL values or undocumented keys. Reference Prep creates two new clean one-clip timelines without touching the verified diagnostic timeline: an RCM-only baseline and an untouched reference seed. It resets each new graph through the documented `Graph:ResetAllGrades()`, requires one default node with no LUT, renders only the RCM baseline, selects the seed, opens Color, and stops.
+
+After a human grades and approves the seed, treat that TimelineItem as immutable. The installed README documents the complete artifact chain: `Timeline:GrabStill()`, `GalleryStillAlbum:ExportStills(..., "drx")`, and `Graph:ApplyGradeFromDRX(path, gradeMode)`. The preferred long-term path exports the approved grade as a private DRX, pins its SHA-256 externally, and applies that exact artifact. `TimelineItem:CopyGrades([targets])` remains a direct same-project copy and cross-check path. Target validation uses reference identity, node count/graph evidence, artifact SHA-256, API success, and render regression—not hidden Primary readback.
 
 ## 7. Test and batch
 

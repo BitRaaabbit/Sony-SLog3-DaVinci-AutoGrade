@@ -2,6 +2,25 @@
 -- Internal DaVinci Resolve preflight and one-clip diagnostic.
 -- No grading, rendering, LUT, proxy, media move, rename, delete, or overwrite.
 
+-- The already-enumerated local launcher always loads this formal entry point.
+-- Reference preparation is an explicitly separate runtime mode and script;
+-- ordinary diagnostic mode continues below unchanged.
+do
+    local dispatchRoot = (os.getenv("TEMP") or "."):gsub("\\", "/") .. "/SonySLog3AutoGrade"
+    local runtimeLoader = loadfile(dispatchRoot .. "/runtime.lua")
+    if runtimeLoader then
+        local runtimeOk, runtimeProfile = pcall(runtimeLoader)
+        if runtimeOk and type(runtimeProfile) == "table" and runtimeProfile.mode == "reference_prep" then
+            local appData = (os.getenv("APPDATA") or ""):gsub("\\", "/")
+            local target = appData
+                .. "/Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Utility/Sony SLog3 Reference Prep.lua"
+            local chunk, loadError = loadfile(target)
+            if not chunk then error("Reference Prep dispatch failed: " .. tostring(loadError), 0) end
+            return chunk()
+        end
+    end
+end
+
 local TEMP_ROOT = (os.getenv("TEMP") or "."):gsub("\\", "/")
 local ASCII_DIR = TEMP_ROOT .. "/SonySLog3AutoGrade"
 local PROFILE_PATH = ASCII_DIR .. "/runtime.lua"

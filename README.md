@@ -32,7 +32,7 @@ External scripting access is not required. The workflow does not install codecs,
 - an empty render queue;
 - maximum three clips for a first test and ten clips per batch invocation.
 
-The automation copies a verified reference grade. It does not encode permanent Neutral Safe Primary values in code.
+The automation reproduces a verified reference grade. It does not encode permanent Neutral Safe Primary values in code. The supported architecture is **human-approved Reference TimelineItem → official still/DRX export → SHA-256-pinned DRX → `ApplyGradeFromDRX()`**. The documented `CopyGrades()` method remains available for direct same-project copying and cross-checks.
 
 Required compatibility media is fail-closed. A working file must pass hash-bound external preflight, signal-equivalence validation, and a fresh Resolve video-decode diagnostic before AutoGrade can import it. Compatibility range normalization is not a creative grade or colorspace conversion, and a legal limited-range DNxHR file must not be forced to Full levels.
 
@@ -57,6 +57,8 @@ The runtime profile is deliberately stored at an ASCII-only path because Resolve
 Neutral Safe targets natural, clean event and documentary images without an obvious filter. Its candidate range is intentionally conservative: Contrast around 1.08, Pivot around 0.44, Color Boost 0–4, Saturation around 50, Highlights around -4, Temperature 0, Tint 0.
 
 These are **test candidates**, not permanent defaults. A human must approve the reference timeline. Global warming, strong Color Boost, strong saturation, sharpening, Midtone Detail, clarity, grain, full-frame noise reduction, and style LUTs are disabled by policy.
+
+The API does not promise setters/readback for every Color Page Primary. Reference Prep therefore creates an untouched RCM-only master timeline and an untouched reference-seed timeline, renders only the RCM baseline, and opens the seed on Color. After human approval, the workflow grabs a still, exports an official DRX, pins its SHA-256, and applies that immutable artifact; it never reconstructs hidden Primary values.
 
 ## Safety invariants
 

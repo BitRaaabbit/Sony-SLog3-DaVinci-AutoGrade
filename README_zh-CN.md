@@ -32,7 +32,7 @@
 - Render Queue 为空；
 - 首测最多3条，每批最多10条。
 
-自动化只复制经过人工确认的参考调色，不在代码中固化永久 Neutral Safe Primary 数值。
+自动化只复现经过人工确认的参考调色，不在代码中固化永久 Neutral Safe Primary 数值。正式架构是：**人工批准 Reference TimelineItem → 官方 Still/DRX 导出 → SHA-256 锁定 DRX → `ApplyGradeFromDRX()`**。官方 `CopyGrades()`保留用于同项目直接复制和交叉验证。
 
 Compatibility working media 默认 fail-closed。工作媒体必须先通过哈希绑定的外部预检与 signal equivalence，再在全新 Resolve 项目中通过真实视频解码诊断，AutoGrade 才能导入。Full→Limited 归一化属于 codec/range representation compatibility，不是创意调色或色彩空间转换；合法 limited-range DNxHR 不得在 Resolve 中强制设为 Full。
 
@@ -57,6 +57,8 @@ Runtime profile 和日志使用纯 ASCII 路径，是因为 Resolve 内部 Lua �
 Neutral Safe 面向活动、展会和纪录素材，目标是正常、自然、干净、通透，不制造明显滤镜感。当前候选范围仅用于测试：Contrast 约1.08、Pivot 约0.44、Color Boost 0–4、Saturation 约50、Highlights 约-4、Temperature 0、Tint 0。
 
 这些不是永久默认参数，必须通过真人审片确认参考时间线。策略上禁止统一加暖、强 Color Boost、强饱和、Sharpen、Midtone Detail、Clarity、颗粒、全片降噪及风格化 LUT。
+
+API 不保证暴露全部 Color Page Primary setter/readback。Reference Prep 因此只创建纯 RCM master Timeline 和纯 RCM reference seed Timeline，只渲染 RCM 基准，并把 seed 打开到 Color Page。人工批准以后，工作流抓取 Still、导出官方 DRX、计算并锁定 SHA-256，再应用该不可变 artifact；脚本不会重建不可读的 Primary 数值。
 
 ## 安全规则
 

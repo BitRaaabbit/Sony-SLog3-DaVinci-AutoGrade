@@ -72,4 +72,6 @@ Do not equate `RootFolder:GetClipList()` userdata count with source-media count.
 
 ## Native primary values cannot be scripted
 
-The documented API exposes node graphs, node count, LUT/cache operations, DRX application, grade copying, and CDL, but not reliable native setters/readback for Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint. These controls must not be approximated with CDL or guessed property names. If native UI automation is unavailable, keep the source timeline unchanged and stop before creating a candidate node or starting renders.
+The documented API exposes node graphs, node count, LUT/cache operations, `Timeline:GrabStill()`, `GalleryStillAlbum:ExportStills(..., "drx")`, `Graph:ApplyGradeFromDRX()`, `TimelineItem:CopyGrades()`, and CDL, but not reliable native setters/readback for Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint. These controls must not be approximated with CDL or guessed property names. Create an untouched reference seed, let a human approve its native Color Page grade, then export and hash-pin the DRX artifact.
+
+Prefer the DRX path for an immutable long-lived asset because the installed official README explicitly supports still capture, DRX export, and graph application. Verify the exported file exists, is non-empty, and has the recorded SHA-256 before any application. `CopyGrades()` is appropriate for same-project direct copying and regression comparison, but reference TimelineItem identity and node count alone do not freeze hidden grade values.
