@@ -1,6 +1,8 @@
 # Diagnostic report example (sanitized)
 
 - Interface: internal Workspace Lua
+- Launcher ID: stable local launcher
+- Logic commit / SHA-256: externally attested public formal script identity
 - Resolve object: `app:GetResolve()` available
 - Project: isolated diagnostic project
 - Playback FPS set/readback: 25.000 / 25.000
@@ -10,10 +12,15 @@
 - Original Source: `C:/Example/ReadOnlySource/SONY_SLOG3_CLIP_001.MP4`
 - Resolve Working Media: `C:/Example/WorkingMedia/SONY_SLOG3_CLIP_001_DNxHR_HQX.mov`
 - Original Metadata Policy: `FROM_VERIFIED_ORIGINAL_SOURCE_METADATA`
+- Original Source Authority: `EXTERNAL_VERIFIED_ATTESTATION`
+- External Media Attestation: `PASS` (one exact mapping ID; original/working SHA-256 and ffprobe baselines matched immediately before runtime sync)
 - Compatibility Reason: `UNSUPPORTED_NATIVE_VIDEO_DECODE`
 - Range Transform: `FULL_TO_LIMITED_NORMALIZATION`
 - Signal Equivalence: `PASS`
 - Working Media Video Decode: `PASS`
+- Video Track: `PASS`
+- Validated TimelineItem count: `1`
+- Exact Working Timeline Source: `PASS`
 - Imported working media: first declared mapping only
 - Timeline: one clip
 - SaveProject: Success

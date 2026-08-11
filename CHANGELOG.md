@@ -11,6 +11,8 @@
 - Added an Original Log → RCM Only → Neutral Safe → high-quality master → delivery codec display/LED diagnostic chain.
 - Added the private blank-DRP bootstrap as the recommended Project Format compatibility path; the exact-preset path remains optional.
 - Added an explicit `ORIGINAL_SOURCE_MEDIA` → `RESOLVE_WORKING_MEDIA` runtime mapping so decode-compatible mezzanine files cannot replace or redefine immutable camera metadata.
+- Split compatibility validation into external preflight authority and Resolve runtime validation. A private hash-bound attestation now proves original/working identity and signal equivalence; Resolve imports only working media and never uses MediaStorage enumeration as original-source authority.
+- Separated stable launcher identity from formal Diagnostic logic identity so logic commits can be deployed without creating another Workspace menu entry.
 
 ### Fixed
 
@@ -26,6 +28,7 @@
 - Unicode media paths are passed to Resolve APIs while Lua file logs/config are staged at ASCII-only paths.
 - Added `UNSUPPORTED_NATIVE_VIDEO_DECODE`, `COMPATIBILITY_TRANSCODE_REQUIRED`, `FULL_TO_LIMITED_NORMALIZATION`, and `SIGNAL_EQUIVALENCE_GATE` capability rules. Compatibility range representation is explicitly separated from creative grading and colorspace conversion.
 - Added a fail-closed working-media decode gate: exact mapped import, available Resolution/FPS/Video Codec evidence, one validated Video Track TimelineItem, and exact TimelineItem → MediaPoolItem → working-path verification are required for `SUCCESS_DNXHR_COMPATIBILITY_READY`.
+- Removed the invalid requirement that Resolve enumerate original camera media before a compatibility import. Unicode original-path existence is now owned by external filesystem/hash/ffprobe preflight and bound to runtime evidence.
 
 ### Safety
 

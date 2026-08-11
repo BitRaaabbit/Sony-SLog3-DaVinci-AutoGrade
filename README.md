@@ -20,7 +20,7 @@ External scripting access is not required. The workflow does not install codecs,
 
 `Sony SLog3 Template Capture.lua` exports a human-verified, completely blank Resolve project to a private, collision-safe DRP after checking Playback FPS, Timeline FPS, width, height, Media Pool, timelines, and render queue. It never changes project settings.
 
-`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile and validates one homogeneous batch. The recommended `drp_template` bootstrap imports the private blank DRP under a unique project name, rechecks its format and blank state, and stops on any mismatch. The optional `preset` bootstrap remains available only when `Project:GetPresetList()` exposes an exact verified preset. Project Format and color are deliberately separate. An optional Original → Working mapping keeps immutable camera metadata distinct from a Resolve-compatible mezzanine: Diagnostic imports the declared working path, retains the original Sony Input Color Policy, and proves video decode through one real Video Track TimelineItem before saving and stopping on Edit.
+`Sony SLog3 Diagnostic.lua` loads an ASCII-path runtime profile and validates one homogeneous batch. The recommended `drp_template` bootstrap imports the private blank DRP under a unique project name, rechecks its format and blank state, and stops on any mismatch. The optional `preset` bootstrap remains available only when `Project:GetPresetList()` exposes an exact verified preset. Project Format and color are deliberately separate. For compatibility media, an external filesystem/hash/ffprobe attestation owns original-camera identity and exact Original → Working mapping; Resolve imports only the working path and proves decode through one real Video Track TimelineItem. Resolve MediaStorage enumeration is never treated as authority for original camera media.
 
 `Sony SLog3 AutoGrade.lua` is gated behind all of the following:
 
@@ -34,7 +34,7 @@ External scripting access is not required. The workflow does not install codecs,
 
 The automation copies a verified reference grade. It does not encode permanent Neutral Safe Primary values in code.
 
-Required compatibility media is fail-closed. A working file must pass signal-equivalence validation and a fresh Resolve video-decode diagnostic before AutoGrade can import it. Compatibility range normalization is not a creative grade or colorspace conversion, and a legal limited-range DNxHR file must not be forced to Full levels.
+Required compatibility media is fail-closed. A working file must pass hash-bound external preflight, signal-equivalence validation, and a fresh Resolve video-decode diagnostic before AutoGrade can import it. Compatibility range normalization is not a creative grade or colorspace conversion, and a legal limited-range DNxHR file must not be forced to Full levels.
 
 ## Install
 

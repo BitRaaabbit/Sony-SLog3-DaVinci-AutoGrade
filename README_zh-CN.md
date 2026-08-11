@@ -20,7 +20,7 @@
 
 `Sony SLog3 Template Capture.lua` 先验证当前 Resolve 项目完全为空，并读回 Playback FPS、Timeline FPS、宽度和高度；全部匹配后才将该项目导出为私有且不覆盖的 DRP。它不会修改任何项目设置。
 
-`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，并验证同批素材。推荐的 `drp_template` 引导方式会把私有空白 DRP 以唯一项目名导入，再次验证格式和空项目状态，任一不匹配立即停止。只有 `Project:GetPresetList()` 能精确暴露已验证 Preset 时，才可选择保留的 `preset` 引导方式。Project Format 与色彩管线严格分离。可选的 Original → Working 映射会把只读相机原片的元数据权威身份与 Resolve 兼容中间媒体分开：Diagnostic 只导入声明的 working 路径，继续使用 original 的 Sony Input Color Policy，并以真实 Video Track TimelineItem 证明视频解码成功。
+`Sony SLog3 Diagnostic.lua` 从纯 ASCII 路径读取本地 runtime profile，并验证同批素材。推荐的 `drp_template` 引导方式会把私有空白 DRP 以唯一项目名导入，再次验证格式和空项目状态，任一不匹配立即停止。只有 `Project:GetPresetList()` 能精确暴露已验证 Preset 时，才可选择保留的 `preset` 引导方式。Project Format 与色彩管线严格分离。兼容媒体由外部 filesystem/hash/ffprobe attestation 负责原片身份和精确 Original → Working 映射；Resolve 只导入 working 路径，并以真实 Video Track TimelineItem 证明视频解码成功。Resolve MediaStorage 枚举不再作为原始相机素材的存在性权威。
 
 `Sony SLog3 AutoGrade.lua` 只有同时满足以下条件才允许运行：
 
@@ -34,7 +34,7 @@
 
 自动化只复制经过人工确认的参考调色，不在代码中固化永久 Neutral Safe Primary 数值。
 
-Compatibility working media 默认 fail-closed。工作媒体必须先通过 signal equivalence，再在全新 Resolve 项目中通过真实视频解码诊断，AutoGrade 才能导入。Full→Limited 归一化属于 codec/range representation compatibility，不是创意调色或色彩空间转换；合法 limited-range DNxHR 不得在 Resolve 中强制设为 Full。
+Compatibility working media 默认 fail-closed。工作媒体必须先通过哈希绑定的外部预检与 signal equivalence，再在全新 Resolve 项目中通过真实视频解码诊断，AutoGrade 才能导入。Full→Limited 归一化属于 codec/range representation compatibility，不是创意调色或色彩空间转换；合法 limited-range DNxHR 不得在 Resolve 中强制设为 Full。
 
 ## 安装
 

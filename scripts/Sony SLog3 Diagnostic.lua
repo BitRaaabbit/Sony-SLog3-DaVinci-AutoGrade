@@ -17,6 +17,8 @@ local state = {
     template_path = "",
     project_name = "UNKNOWN",
     profile = {},
+    logic_commit = "UNKNOWN",
+    logic_sha256 = "UNKNOWN",
     settings = {},
     imported_file = "",
     original_source = "",
@@ -29,6 +31,19 @@ local state = {
     range_transform = "NONE",
     signal_equivalence_status = "NOT_APPLICABLE",
     original_metadata_policy = "NOT_VERIFIED",
+    external_attestation_status = "NOT_CHECKED",
+    external_mapping_id = "",
+    external_preflight_timestamp = "",
+    external_preflight_tool = "",
+    original_verification_status = "NOT_CHECKED",
+    original_sha256_attested = "",
+    original_size_attested = "",
+    original_frames_attested = "",
+    original_duration_attested = "",
+    working_verification_status = "NOT_CHECKED",
+    video_track_status = "NOT_TESTED",
+    validated_timeline_item_count = -1,
+    timeline_exact_working_source = "NOT_TESTED",
     working_resolution = "",
     working_fps = "",
     working_video_codec = "",
@@ -211,12 +226,29 @@ local function fileExists(path)
     return size ~= nil
 end
 
+local function findExternalAttestation(profile, mappingId)
+    local attestations = profile.batch and profile.batch.external_media_attestations
+    if type(attestations) ~= "table" then return nil, 0 end
+    local match, count = nil, 0
+    for _, candidate in ipairs(attestations) do
+        if type(candidate) == "table" and tostring(candidate.mapping_id or "") == tostring(mappingId or "") then
+            count = count + 1
+            match = candidate
+        end
+    end
+    return match, count
+end
+
 local function firstMediaMapping(profile)
     local mappings = profile.batch and profile.batch.media_mappings
     if type(mappings) == "table" and #mappings > 0 then
         local entry = mappings[1]
         local required = entry.working_media_required == true
+        local mappingId = tostring(entry.mapping_id or "")
+        local attestation = required and select(1, findExternalAttestation(profile, mappingId)) or nil
         return {
+            mapping_id = mappingId,
+            attestation = attestation,
             original_file = tostring(entry.original_file or ""),
             working_file = tostring(entry.working_file or ""),
             import_file = required and tostring(entry.working_file or "") or tostring(entry.original_file or ""),
@@ -242,6 +274,8 @@ local function firstMediaMapping(profile)
     local original = joinPath(profile.paths.input_dir, firstName)
     return {
         original_file = original,
+        mapping_id = "",
+        attestation = nil,
         working_file = original,
         import_file = original,
         working_media_required = false,
@@ -274,6 +308,85 @@ fail = function(message)
     error(tostring(message), 0)
 end
 
+local function isSha256(value)
+    return tostring(value or ""):match("^[0-9A-Fa-f]+$") ~= nil and #tostring(value or "") == 64
+end
+
+local function validateExternalAttestation(profile, entry, index)
+    local mappingId = tostring(entry.mapping_id or "")
+    if mappingId == "" then fail("Required working-media mapping needs mapping_id: " .. tostring(index)) end
+    local attestation, matchCount = findExternalAttestation(profile, mappingId)
+    if matchCount ~= 1 or type(attestation) ~= "table" then
+        fail("Exactly one EXTERNAL_MEDIA_ATTESTATION must match mapping_id=" .. mappingId)
+    end
+    local requiredStrings = {
+        "external_preflight_timestamp", "external_preflight_tool", "original_file", "original_sha256",
+        "working_file", "working_sha256", "original_gamma", "original_primaries", "metadata_confirmation",
+        "original_codec", "original_profile", "original_pix_fmt", "working_codec", "working_profile",
+        "working_pix_fmt", "working_audio_codec", "signal_equivalence_evidence"
+    }
+    for _, key in ipairs(requiredStrings) do
+        if tostring(attestation[key] or "") == "" then fail("External attestation missing " .. key .. ": " .. mappingId) end
+    end
+    if tonumber(attestation.attestation_version) ~= 1 then fail("Unsupported external attestation version: " .. mappingId) end
+    if tostring(attestation.original_verification_status or "") ~= "PASS" then fail("Original external verification is not PASS: " .. mappingId) end
+    if tostring(attestation.working_verification_status or "") ~= "PASS" then fail("Working-media external verification is not PASS: " .. mappingId) end
+    if attestation.original_metadata_verified ~= true then fail("Original metadata is not externally verified: " .. mappingId) end
+    if attestation.working_media_verified ~= true then fail("Working media is not externally verified: " .. mappingId) end
+    if tostring(attestation.signal_equivalence_status or "") ~= "PASS" then fail("External signal equivalence is not PASS: " .. mappingId) end
+    if tostring(attestation.range_transform or "") ~= "FULL_TO_LIMITED_NORMALIZATION" then
+        fail("External attestation range transform is invalid: " .. mappingId)
+    end
+    if tostring(attestation.input_color_policy or "") ~= "FROM_VERIFIED_ORIGINAL_SOURCE_METADATA" then
+        fail("External attestation input color policy is invalid: " .. mappingId)
+    end
+    if pathKey(attestation.original_file) ~= pathKey(entry.original_file) then fail("Attested original path does not match mapping: " .. mappingId) end
+    if pathKey(attestation.working_file) ~= pathKey(entry.working_file) then fail("Attested working path does not match mapping: " .. mappingId) end
+    if not isSha256(attestation.original_sha256) or not isSha256(attestation.working_sha256) then
+        fail("External attestation requires valid SHA-256 values: " .. mappingId)
+    end
+    if tonumber(attestation.original_size) == nil or tonumber(attestation.original_size) <= 0 then fail("Invalid attested original_size: " .. mappingId) end
+    if tonumber(attestation.working_size) == nil or tonumber(attestation.working_size) <= 0 then fail("Invalid attested working_size: " .. mappingId) end
+    if tonumber(attestation.original_frame_count) == nil or tonumber(attestation.original_frame_count) <= 0 then fail("Invalid attested original_frame_count: " .. mappingId) end
+    if tonumber(attestation.working_frame_count) == nil or tonumber(attestation.working_frame_count) <= 0 then fail("Invalid attested working_frame_count: " .. mappingId) end
+    if tonumber(attestation.original_duration) == nil or tonumber(attestation.original_duration) <= 0 then fail("Invalid attested original_duration: " .. mappingId) end
+    if tonumber(attestation.working_duration) == nil or tonumber(attestation.working_duration) <= 0 then fail("Invalid attested working_duration: " .. mappingId) end
+    if normalize(attestation.original_gamma) ~= normalize(entry.original_gamma) then fail("Attested original gamma does not match mapping: " .. mappingId) end
+    if normalize(attestation.original_primaries) ~= normalize(entry.original_primaries) then fail("Attested original primaries do not match mapping: " .. mappingId) end
+    if tostring(attestation.metadata_confirmation) ~= tostring(profile.batch.metadata_confirmation) then
+        fail("Attested metadata confirmation does not match batch evidence: " .. mappingId)
+    end
+    if tonumber(attestation.original_width) ~= tonumber(profile.batch.width)
+        or tonumber(attestation.original_height) ~= tonumber(profile.batch.height)
+        or not numberEquals(attestation.original_frame_rate, tonumber(profile.batch.frame_rate)) then
+        fail("Attested original technical baseline does not match batch: " .. mappingId)
+    end
+    if tonumber(attestation.original_frame_count) ~= tonumber(attestation.working_frame_count)
+        or not numberEquals(attestation.original_duration, tonumber(attestation.working_duration)) then
+        fail("Attested original and working timing do not match: " .. mappingId)
+    end
+    if not contains(attestation.working_codec, "dnx") or not contains(attestation.working_profile, "dnxhr") then
+        fail("Attested working codec/profile is not DNxHR: " .. mappingId)
+    end
+    if tostring(attestation.working_sha256):upper() ~= tostring(entry.working_sha256 or ""):upper() then
+        fail("Attested working SHA-256 does not match mapping: " .. mappingId)
+    end
+    if normalize(attestation.working_profile) ~= normalize(entry.working_codec) then
+        fail("Attested working profile does not match mapping: " .. mappingId)
+    end
+    if normalize(attestation.working_pix_fmt) ~= normalize(entry.working_pixel_format) then
+        fail("Attested working pixel format does not match mapping: " .. mappingId)
+    end
+    if tonumber(attestation.working_width) ~= tonumber(entry.working_width)
+        or tonumber(attestation.working_height) ~= tonumber(entry.working_height)
+        or not numberEquals(attestation.working_frame_rate, tonumber(entry.working_frame_rate))
+        or tonumber(attestation.working_frame_count) ~= tonumber(entry.working_frames)
+        or not numberEquals(attestation.working_duration, tonumber(entry.working_duration)) then
+        fail("Attested working technical baseline does not match mapping: " .. mappingId)
+    end
+    return attestation
+end
+
 local function loadRuntimeProfile()
     setStage("Runtime Profile")
     logValue("profile.path", PROFILE_PATH)
@@ -287,6 +400,15 @@ local function loadRuntimeProfile()
     if tonumber(profile.schema_version) ~= 2 then fail("Unsupported runtime profile schema_version.") end
     if profile.mode ~= "diagnostic" then fail("Diagnostic script requires profile.mode='diagnostic'.") end
     if type(profile.project) ~= "table" or tostring(profile.project.name or "") == "" then fail("Missing project.name.") end
+    if type(profile.deployment) ~= "table" then fail("Missing external deployment attestation.") end
+    if not tostring(profile.deployment.logic_commit or ""):match("^[0-9a-fA-F]+$")
+        or #tostring(profile.deployment.logic_commit or "") < 7 then fail("Invalid deployment.logic_commit.") end
+    if not isSha256(profile.deployment.logic_sha256) then fail("Invalid deployment.logic_sha256.") end
+    state.logic_commit = tostring(profile.deployment.logic_commit)
+    state.logic_sha256 = tostring(profile.deployment.logic_sha256):upper()
+    logValue("logic_commit", state.logic_commit)
+    logValue("logic_sha256", state.logic_sha256)
+    logValue("logic_identity_authority", "EXTERNAL_DEPLOYMENT_ATTESTATION")
     local bootstrapMethod = tostring(profile.project.bootstrap_method or "")
     if bootstrapMethod ~= "preset" and bootstrapMethod ~= "drp_template" then
         fail("project.bootstrap_method must be 'preset' or 'drp_template'.")
@@ -355,6 +477,13 @@ local function loadRuntimeProfile()
                 if tostring(entry.signal_equivalence_status or "") ~= "PASS" then
                     fail("SIGNAL_EQUIVALENCE_GATE: required working media has not passed signal equivalence.")
                 end
+                if tonumber(entry.working_width) == nil or tonumber(entry.working_height) == nil
+                    or tonumber(entry.working_frame_rate) == nil or tonumber(entry.working_frames) == nil
+                    or tonumber(entry.working_duration) == nil then
+                    fail("Required working media needs a complete technical baseline.")
+                end
+                if not isSha256(entry.working_sha256) then fail("Required working media needs a valid working_sha256.") end
+                validateExternalAttestation(profile, entry, index)
             end
         end
     end
@@ -390,6 +519,19 @@ local function loadRuntimeProfile()
     state.working_frames_declared = tostring(firstMapping.working_frames or "")
     state.working_duration_declared = tostring(firstMapping.working_duration or "")
     state.working_sha256_declared = firstMapping.working_sha256
+    if firstMapping.attestation then
+        local attestation = firstMapping.attestation
+        state.external_mapping_id = tostring(attestation.mapping_id or "")
+        state.external_preflight_timestamp = tostring(attestation.external_preflight_timestamp or "")
+        state.external_preflight_tool = tostring(attestation.external_preflight_tool or "")
+        state.original_verification_status = tostring(attestation.original_verification_status or "")
+        state.original_sha256_attested = tostring(attestation.original_sha256 or "")
+        state.original_size_attested = tostring(attestation.original_size or "")
+        state.original_frames_attested = tostring(attestation.original_frame_count or "")
+        state.original_duration_attested = tostring(attestation.original_duration or "")
+        state.working_verification_status = tostring(attestation.working_verification_status or "")
+        state.external_attestation_status = "PASS"
+    end
     logValue("preflight.original_source", state.original_source)
     logValue("preflight.resolve_working_media", state.resolve_working_media)
     logValue("preflight.working_media_required", state.working_media_required)
@@ -397,6 +539,10 @@ local function loadRuntimeProfile()
     logValue("preflight.range_transform", state.range_transform)
     logValue("preflight.signal_equivalence_status", state.signal_equivalence_status)
     logValue("preflight.original_metadata_policy", state.original_metadata_policy)
+    logValue("preflight.external_attestation_status", state.external_attestation_status)
+    logValue("preflight.external_mapping_id", state.external_mapping_id)
+    logValue("preflight.external_preflight_timestamp", state.external_preflight_timestamp)
+    logValue("preflight.external_preflight_tool", state.external_preflight_tool)
     logLine("Runtime Profile=SUCCESS")
     return profile
 end
@@ -837,28 +983,6 @@ local function readNamedClipProperty(item, propertyName, label)
     return callOk and tostring(value or "") or ""
 end
 
-local function mediaStoragePathExists(resolveObject, path, label)
-    local directory = dirname(path)
-    logValue(label .. ".path", path)
-    logValue(label .. ".directory", directory)
-    if directory == "" then fail(label .. " has no parent directory.") end
-    local storage = resolveObject:GetMediaStorage()
-    if not storage then fail("GetMediaStorage returned nil during " .. label) end
-    local callOk, files = pcall(function() return storage:GetFileList(directory) end)
-    logValue(label .. ".get_file_list_call_ok", callOk)
-    logValue(label .. ".get_file_list_return_type", type(files))
-    if not callOk or type(files) ~= "table" then fail(label .. " MediaStorage:GetFileList failed.") end
-    dumpRawCollection(string.upper(label) .. " FILE LIST", files)
-    local exact = false
-    for index, candidate in ipairs(files) do
-        logValue(label .. ".candidate[" .. tostring(index) .. "]", candidate)
-        if type(candidate) == "string" and pathKey(candidate) == pathKey(path) then exact = true end
-    end
-    logValue(label .. ".exact_path_exists", exact)
-    if not exact then fail(label .. " exact declared path is not visible through Resolve MediaStorage.") end
-    return true
-end
-
 local function propertyNumber(value)
     return tonumber(tostring(value or ""):match("[%d%.]+"))
 end
@@ -1008,6 +1132,14 @@ local function validateMediaPoolClassification(classified, expectedTimelineCount
 end
 
 local function validateTimelineItems(timeline, expectedPath, label, workingMediaRequired)
+    local trackCountOk, videoTrackCount = pcall(function() return timeline:GetTrackCount("video") end)
+    logValue(label .. ".video_track_count_call_ok", trackCountOk)
+    logValue(label .. ".video_track_count", videoTrackCount)
+    if not trackCountOk or tonumber(videoTrackCount) == nil or tonumber(videoTrackCount) < 1 then
+        fail("Diagnostic timeline does not contain a real Video Track 1.")
+    end
+    state.video_track_status = "PASS"
+    logLine("VIDEO_TRACK=PASS")
     local callOk, rawItems = pcall(function() return timeline:GetItemListInTrack("video", 1) end)
     logValue(label .. ".call_ok", callOk)
     logValue(label .. ".return_type", type(rawItems))
@@ -1025,6 +1157,7 @@ local function validateTimelineItems(timeline, expectedPath, label, workingMedia
         return true
     end, label)
     logValue("validated_video_item_count", count)
+    state.validated_timeline_item_count = count
     if count == 0 then fail("EMPTY_DIAGNOSTIC_TIMELINE: existing timeline has no validated video item; no replacement was created.") end
     if count ~= 1 then fail("Diagnostic timeline must contain exactly one validated video item; found " .. tostring(count) .. ".") end
 
@@ -1038,9 +1171,11 @@ local function validateTimelineItems(timeline, expectedPath, label, workingMedia
     if pathKey(actualPath) ~= pathKey(expectedPath) then fail("Timeline source verification failed.") end
     if workingMediaRequired then
         state.working_media_video_decode = "PASS"
+        state.timeline_exact_working_source = "PASS"
         logLine("WORKING_MEDIA_VIDEO_DECODE=PASS")
         logLine("TIMELINE=ONE_EXACT_WORKING_SOURCE")
     else
+        state.timeline_exact_working_source = "NOT_APPLICABLE"
         logLine("TIMELINE=ONE_EXACT_SOURCE")
     end
     return items[1]
@@ -1127,7 +1262,7 @@ local function resumeExistingDiagnostic(manager, currentProject, profile)
     return project, mediaPool, exactClip, expectedPath
 end
 
-local function ensureOneClip(resolveObject, project, profile)
+local function ensureOneClip(project, profile)
     setStage("Media Pool")
     local mediaPool, root, clips = rootObjects(project)
     local folders = root:GetSubFolderList() or {}
@@ -1140,9 +1275,23 @@ local function ensureOneClip(resolveObject, project, profile)
     local mapping = firstMediaMapping(profile)
     local firstName = basename(mapping.original_file)
     local fullPath = mapping.import_file
-    setStage("Original and Working Media Mapping")
-    mediaStoragePathExists(resolveObject, mapping.original_file, "original_source_media")
-    if mapping.working_media_required then mediaStoragePathExists(resolveObject, mapping.working_file, "resolve_working_media") end
+    setStage("External Mapping Attestation")
+    if mapping.working_media_required then
+        local attestation = mapping.attestation
+        if type(attestation) ~= "table" or state.external_attestation_status ~= "PASS" then
+            fail("Compatibility working media requires a validated EXTERNAL_MEDIA_ATTESTATION.")
+        end
+        logValue("external_attestation.mapping_id", attestation.mapping_id)
+        logValue("external_attestation.original_verification_status", attestation.original_verification_status)
+        logValue("external_attestation.working_verification_status", attestation.working_verification_status)
+        logValue("external_attestation.original_sha256", attestation.original_sha256)
+        logValue("external_attestation.working_sha256", attestation.working_sha256)
+        logValue("external_attestation.signal_equivalence_status", attestation.signal_equivalence_status)
+        logValue("external_attestation.range_transform", attestation.range_transform)
+        logValue("external_attestation.input_color_policy", attestation.input_color_policy)
+        logLine("ORIGINAL SOURCE AUTHORITY=EXTERNAL_VERIFIED_ATTESTATION")
+        logLine("EXTERNAL MEDIA ATTESTATION=PASS")
+    end
     logValue("mapping.original_source", mapping.original_file)
     logValue("mapping.resolve_working_media", mapping.import_file)
     logValue("mapping.original_gamma", mapping.original_gamma)
@@ -1341,6 +1490,8 @@ local function writeReport(tracebackText)
         "# Sony S-Log3 Diagnostic report", "",
         "- Status: `" .. state.status .. "`",
         "- Last stage: `" .. state.stage .. "`",
+        "- Logic commit: `" .. state.logic_commit .. "`",
+        "- Logic SHA-256: `" .. state.logic_sha256 .. "`",
         "- Bootstrap method: `" .. state.bootstrap_method .. "`",
         "- Bootstrap status: `" .. state.bootstrap_status .. "`",
         "- Template path: `" .. state.template_path .. "`",
@@ -1353,6 +1504,16 @@ local function writeReport(tracebackText)
         "- Compatibility Reason: `" .. state.compatibility_reason .. "`",
         "- Range Transform: `" .. state.range_transform .. "`",
         "- Signal Equivalence: `" .. state.signal_equivalence_status .. "`",
+        "- External Attestation: `" .. state.external_attestation_status .. "`",
+        "- Mapping ID: `" .. state.external_mapping_id .. "`",
+        "- External Preflight Timestamp: `" .. state.external_preflight_timestamp .. "`",
+        "- External Preflight Tool: `" .. state.external_preflight_tool .. "`",
+        "- Original Verification: `" .. state.original_verification_status .. "`",
+        "- Original SHA-256: `" .. state.original_sha256_attested .. "`",
+        "- Original Size: `" .. state.original_size_attested .. "`",
+        "- Original Frames: `" .. state.original_frames_attested .. "`",
+        "- Original Duration: `" .. state.original_duration_attested .. "`",
+        "- Working Verification: `" .. state.working_verification_status .. "`",
         "- Working Media Import: `" .. state.working_media_import .. "`",
         "- Working Media Video Decode: `" .. state.working_media_video_decode .. "`",
         "- Declared Working Codec: `" .. state.working_codec_declared .. "`",
@@ -1365,6 +1526,9 @@ local function writeReport(tracebackText)
         "- Resolve Working Resolution: `" .. state.working_resolution .. "`",
         "- Resolve Working FPS: `" .. state.working_fps .. "`",
         "- Resolve Working Video Codec: `" .. state.working_video_codec .. "`",
+        "- Video Track: `" .. state.video_track_status .. "`",
+        "- Validated TimelineItem Count: `" .. tostring(state.validated_timeline_item_count) .. "`",
+        "- Exact Working Timeline Source: `" .. state.timeline_exact_working_source .. "`",
         "- Timeline: `" .. state.timeline .. "`",
         "- DRP staging: `" .. state.drp_path .. "`", "",
         "## Media Pool classification", "",
@@ -1438,7 +1602,7 @@ local function main()
     end
     configureColorManagement(project)
     verifyFinalSettings(project, profile)
-    local mediaPool, clip, sourcePath, mapping = ensureOneClip(resolveObject, project, profile)
+    local mediaPool, clip, sourcePath, mapping = ensureOneClip(project, profile)
     evaluateInputPolicy(project, clip, profile, mapping)
     ensureTimeline(project, mediaPool, clip, sourcePath, profile, mapping)
 
@@ -1466,7 +1630,9 @@ local function main()
     if opened ~= true then fail("OpenPage(edit) did not return true.") end
     logLine("OpenPage=SUCCESS")
     if mapping.working_media_required then
-        if state.working_media_mapping ~= "VERIFIED" or state.working_media_import ~= "PASS"
+        if state.external_attestation_status ~= "PASS" or state.working_media_mapping ~= "VERIFIED"
+            or state.working_media_import ~= "PASS" or state.video_track_status ~= "PASS"
+            or state.validated_timeline_item_count ~= 1 or state.timeline_exact_working_source ~= "PASS"
             or state.working_media_video_decode ~= "PASS" then
             fail("Compatibility working-media success gates are incomplete.")
         end

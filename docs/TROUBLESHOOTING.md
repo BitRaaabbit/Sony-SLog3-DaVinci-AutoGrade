@@ -10,7 +10,7 @@ Resolve 20.3.2 Free was observed to expose a valid internal Resolve userdata thr
 
 Resolve's internal Lua `io.open` may report `No such file or directory` for an existing path containing Chinese or other Unicode characters. Keep Lua profiles, logs, reports, traceback, state, and temporary DRP staging under `%TEMP%\SonySLog3AutoGrade`.
 
-This does not prove that Resolve's media APIs reject Unicode. Pass the original path directly to `MediaPool:ImportMedia`, verify its returned MediaPoolItem and exact File Path, and stop on failure. Do not create a junction or move source media as an automatic workaround.
+This does not prove that Resolve's media APIs reject Unicode. In a direct-media workflow, pass the declared import path to `MediaPool:ImportMedia` and verify its returned MediaPoolItem and exact File Path. In a compatibility workflow, never ask Resolve MediaStorage to enumerate the original camera path: external filesystem/hash/ffprobe evidence owns original identity, while Resolve imports and validates only the working path. Do not create a junction or move source media as an automatic workaround.
 
 ## Playback FPS remains at the default
 
@@ -36,7 +36,13 @@ Treat an imported MediaPoolItem with the correct path but empty Resolution/Video
 
 A compatibility transcode is allowed only through an explicit Original → Working mapping. The original remains read-only metadata authority. Before Resolve testing, require a private technical report proving codec, pixel format, geometry, FPS, frames, duration, audio, SHA-256, and `SIGNAL_EQUIVALENCE=PASS`. If full-range source is represented as limited-range DNxHR, record `FULL_TO_LIMITED_NORMALIZATION`; do not call it a colorspace conversion and do not force the DNxHR clip to Full levels.
 
+Generate a private `EXTERNAL_MEDIA_ATTESTATION` immediately before runtime sync. It must bind one `mapping_id` to exact original/working paths and SHA-256 values, confirmed original gamma/primaries, both technical baselines, preflight timestamp/tool, range transform, and signal-equivalence result. A missing, stale, duplicate, mismatched, or non-PASS attestation stops before `ImportMedia`. Resolve does not independently re-prove original existence because Unicode directory enumeration is not a reliable source-identity authority.
+
 Use a fresh diagnostic project from the verified DRP. Import the exact working path and require one real Video Track TimelineItem linked back to that exact MediaPoolItem. `ImportMedia()` returning an object is not enough. Missing/incorrect Resolution, FPS, codec evidence, an audio-only timeline, or a mismatched path stops before grading or rendering.
+
+## Launcher runs newer formal logic
+
+The Workspace launcher and formal Diagnostic script are intentionally separate. The launcher writes `launcher_id`/`deployment_id`, then loads the formal script from its installed Utility path. Formal logs must also record externally attested `logic_commit` and `logic_sha256`. If the launcher file did not change, deploy the updated formal script and keep the already-enumerated launcher; do not create another menu item or restart Resolve merely for a business-logic commit.
 
 ## Working DNxHR reports a bt709 matrix
 

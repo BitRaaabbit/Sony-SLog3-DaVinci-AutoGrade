@@ -4,6 +4,13 @@
 return {
     schema_version = 2,
     mode = "diagnostic",
+    -- Produced by the external deployment/preflight step. Diagnostic logs
+    -- these values so a stable launcher can load newer formal logic without
+    -- requiring a new Resolve menu entry for every commit.
+    deployment = {
+        logic_commit = "PUBLIC_COMMIT_SHORT_SHA",
+        logic_sha256 = "PUBLIC_SCRIPT_SHA256"
+    },
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
         allow_create = true,
@@ -48,6 +55,7 @@ return {
         -- never be confused. Keep all real paths and hashes private.
         media_mappings = {
             {
+                mapping_id = "EXAMPLE_MAPPING_001",
                 original_file = "C:/Path/To/ReadOnlySource/SONY_SLOG3_CLIP_001.MP4",
                 working_file = "C:/Path/To/PrivateWorkingMedia/SONY_SLOG3_CLIP_001_DNxHR_HQX.mov",
                 working_media_required = true,
@@ -65,6 +73,51 @@ return {
                 working_frames = 1000,
                 working_duration = 40.0,
                 working_sha256 = "PRIVATE_SHA256"
+            }
+        },
+        -- Private, hash-bound evidence produced outside Resolve. The internal
+        -- script validates this schema and exact mapping, but never asks
+        -- Resolve MediaStorage to enumerate or decode ORIGINAL_SOURCE_MEDIA.
+        external_media_attestations = {
+            {
+                attestation_version = 1,
+                mapping_id = "EXAMPLE_MAPPING_001",
+                external_preflight_timestamp = "2026-01-01T00:00:00+00:00",
+                external_preflight_tool = "filesystem+sha256+ffprobe+signal-equivalence",
+                original_verification_status = "PASS",
+                working_verification_status = "PASS",
+                original_file = "C:/Path/To/ReadOnlySource/SONY_SLOG3_CLIP_001.MP4",
+                original_sha256 = "PRIVATE_ORIGINAL_SHA256",
+                original_size = 100000000,
+                original_codec = "h264",
+                original_profile = "High 4:2:2",
+                original_pix_fmt = "yuv422p10le",
+                original_width = 1920,
+                original_height = 1080,
+                original_frame_rate = 25.0,
+                original_frame_count = 1000,
+                original_duration = 40.0,
+                original_gamma = "S-Log3",
+                original_primaries = "Sony S-Gamut3.Cine",
+                metadata_confirmation = "camera_or_sidecar_metadata",
+                working_file = "C:/Path/To/PrivateWorkingMedia/SONY_SLOG3_CLIP_001_DNxHR_HQX.mov",
+                working_sha256 = "PRIVATE_WORKING_SHA256",
+                working_size = 1000000000,
+                working_codec = "dnxhd",
+                working_profile = "DNxHR HQX",
+                working_pix_fmt = "10-bit 4:2:2",
+                working_width = 1920,
+                working_height = 1080,
+                working_frame_rate = 25.0,
+                working_frame_count = 1000,
+                working_duration = 40.0,
+                working_audio_codec = "pcm_s16be",
+                original_metadata_verified = true,
+                working_media_verified = true,
+                signal_equivalence_status = "PASS",
+                signal_equivalence_evidence = "private full-frame YUV comparison report",
+                range_transform = "FULL_TO_LIMITED_NORMALIZATION",
+                input_color_policy = "FROM_VERIFIED_ORIGINAL_SOURCE_METADATA"
             }
         }
     },
