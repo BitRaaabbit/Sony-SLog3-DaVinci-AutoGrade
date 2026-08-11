@@ -11,7 +11,8 @@ return {
         logic_commit = "PUBLIC_COMMIT_SHORT_SHA",
         logic_sha256 = "PUBLIC_DIAGNOSTIC_ENTRY_SHA256",
         reference_prep_sha256 = "PUBLIC_REFERENCE_PREP_SCRIPT_SHA256",
-        reference_postflight_sha256 = "PUBLIC_REFERENCE_POSTFLIGHT_SCRIPT_SHA256"
+        reference_postflight_sha256 = "PUBLIC_REFERENCE_POSTFLIGHT_SCRIPT_SHA256",
+        render_preset_capture_sha256 = "PUBLIC_RENDER_PRESET_CAPTURE_SCRIPT_SHA256"
     },
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
@@ -137,7 +138,7 @@ return {
         neutral_safe_timeline = "Sony_SLog3_NEUTRAL_SAFE_REFERENCE",
         output_dir = "C:/Path/To/PrivateOutput/ReferenceTest",
         output_preflight_status = "NOT_CHECKED",
-        a_output_basename = "A_RCM_ONLY_MASTER",
+        a_output_basename = "SONY_SLOG3_CLIP_001_A_RCM_ONLY_MASTER",
         render_authorized = false,
         render_limit = 1,
         render_timeout_seconds = 7200,
@@ -151,6 +152,18 @@ return {
         primary_grade_policy = "HUMAN_APPROVED_REFERENCE_ONLY",
         grade_reproduction_policy = "SHA256_PINNED_DRX_APPLY",
         same_project_copy_policy = "TIMELINE_ITEM_COPYGRADES"
+    },
+    render_preset = {
+        name = "SonySLog3_DNxHR_HQX_4K50_Master",
+        capture_status = "PENDING_HUMAN_VERIFIED_CAPTURE",
+        status = "PENDING_CAPTURE",
+        export_path = "C:/ASCII/Temp/SonySLog3AutoGrade/render_presets/SonySLog3_DNxHR_HQX_4K50_Master.xml",
+        hash_result_path = "C:/ASCII/Temp/SonySLog3AutoGrade/render_presets/SonySLog3_DNxHR_HQX_4K50_Master.sha256",
+        sha256 = "",
+        expected_format_display_name = "QuickTime",
+        expected_format_id = "mov",
+        expected_codec_display_name = "Avid DNxHR HQX 10-bit",
+        expected_codec_id = "DNxHRHQX_10"
     },
     look = {
         name = "Neutral Safe",

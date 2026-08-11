@@ -56,8 +56,6 @@ end
 local function logValue(key, value) logLine(key .. "=" .. tostring(value)) end
 local function stage(name) state.stage = name; logLine("STAGE=" .. name) end
 local function normalize(value) return string.lower((tostring(value or ""):gsub("%s+", ""))) end
-local function compact(value) return string.lower((tostring(value or ""):gsub("[^%w]", ""))) end
-local function contains(value, token) return string.find(normalize(value), normalize(token), 1, true) ~= nil end
 local function pathKey(value) return string.lower(tostring(value or ""):gsub("\\", "/")) end
 local function numberEquals(value, expected)
     local number = tonumber(value)
@@ -114,6 +112,12 @@ local function loadProfile()
         or tostring(profile.color_test.postflight.status_path or "") == "" then
         fail("Missing render postflight configuration.")
     end
+    if type(profile.render_preset) ~= "table"
+        or tostring(profile.render_preset.status or "") ~= "CAPTURED_VERIFIED"
+        or tostring(profile.render_preset.name or "") == ""
+        or not isSha256(profile.render_preset.sha256) then
+        fail("A SHA-256-pinned CAPTURED_VERIFIED render preset is required.")
+    end
     local mapping = profile.batch and profile.batch.media_mappings and profile.batch.media_mappings[1]
     if type(mapping) ~= "table" or mapping.working_media_required ~= true then fail("Missing required working-media mapping.") end
     if tostring(mapping.resolve_decode_status or "") ~= "PASS"
@@ -124,6 +128,8 @@ local function loadProfile()
     logValue("logic_sha256", profile.deployment.logic_sha256)
     logValue("reference_prep_sha256", profile.deployment.reference_prep_sha256)
     logValue("reference_postflight_sha256", profile.deployment.reference_postflight_sha256)
+    logValue("render_preset_name", profile.render_preset.name)
+    logValue("render_preset_sha256", profile.render_preset.sha256)
     logValue("project", profile.color_test.project_name)
     logValue("working_media", mapping.working_file)
     logValue("resolve_decode_status", mapping.resolve_decode_status)
@@ -373,64 +379,47 @@ local function renderQueueCount(project)
     return count
 end
 
-local function chooseDnxhrHqx(project)
-    stage("Render Format Discovery")
-    local formats = project:GetRenderFormats()
-    dumpRawCollection("RENDER FORMATS", formats)
-    if type(formats) ~= "table" then fail("GetRenderFormats did not return a table.") end
-    local formatCandidates = {}
-    for displayName, formatId in pairs(formats) do
-        if type(displayName) == "string" and displayName:sub(1, 2) ~= "__" and type(formatId) == "string" then
-            if normalize(displayName) == "quicktime" and normalize(formatId) == "mov" then
-                formatCandidates[#formatCandidates + 1] = {display = displayName, id = formatId}
+local function presetExactVisible(value, target)
+    if type(value) ~= "table" then return false end
+    for key, item in pairs(value) do
+        if type(key) ~= "string" or key:sub(1, 2) ~= "__" then
+            if type(key) == "string" and key == target then return true end
+            if type(item) == "string" and item == target then return true end
+            if type(item) == "table" then
+                for _, nestedValue in pairs(item) do
+                    if type(nestedValue) == "string" and nestedValue == target then return true end
+                end
             end
         end
     end
-    if #formatCandidates ~= 1 then fail("Could not prove one exact QuickTime display-name -> mov format-ID mapping.") end
-    local formatDisplayName = formatCandidates[1].display
-    local formatId = formatCandidates[1].id
-    state.format_display_name = formatDisplayName
-    logValue("format_display_name", formatDisplayName)
-    logValue("format_id", formatId)
-    logLine("RENDER FORMAT ID=VERIFIED")
+    return false
+end
 
-    local displayNameCodecs = project:GetRenderCodecs(formatDisplayName)
-    dumpRawCollection("RENDER CODECS DISPLAY NAME ARGUMENT", displayNameCodecs)
-    local codecs = project:GetRenderCodecs(formatId)
-    dumpRawCollection("RENDER CODECS FORMAT ID ARGUMENT", codecs)
-    if type(codecs) ~= "table" then fail("GetRenderCodecs(verified format ID) did not return a table.") end
-    local exact = {}
-    for description, codecId in pairs(codecs) do
-        if type(description) == "string" and description:sub(1, 2) ~= "__" and type(codecId) == "string" then
-            local combined = description .. " " .. codecId
-            logValue("render_codec_candidate." .. compact(description), codecId)
-            if contains(combined, "dnxhr") and contains(combined, "hqx") and contains(combined, "10")
-                and not contains(combined, "12") then
-                exact[#exact + 1] = {description = description, id = codecId}
-            end
-        end
+local function loadVerifiedRenderPreset(project, profile)
+    stage("Render Preset Load")
+    local preset = profile.render_preset
+    local presets = project:GetRenderPresetList()
+    dumpRawCollection("RENDER PRESET LIST", presets)
+    if not presetExactVisible(presets, tostring(preset.name)) then
+        fail("Pinned render preset is not EXACT VISIBLE in GetRenderPresetList.")
     end
-    if #exact ~= 1 then fail("Could not prove exactly one DNxHR HQX 10-bit display-name -> codec-ID mapping.") end
-    local codecDescription = exact[1].description
-    local codecId = exact[1].id
-    logValue("DNXHR_HQX_DISPLAY_NAME", codecDescription)
-    logValue("DNXHR_HQX_CODEC_ID", codecId)
-
-    local selected = project:SetCurrentRenderFormatAndCodec(formatId, codecId)
-    logValue("SetCurrentRenderFormatAndCodec.call_return", selected)
-    if selected ~= true then fail("SetCurrentRenderFormatAndCodec returned false for verified IDs.") end
+    local loaded = project:LoadRenderPreset(tostring(preset.name))
+    logValue("LoadRenderPreset.return", loaded)
+    if loaded ~= true then fail("LoadRenderPreset returned false.") end
     local current = project:GetCurrentRenderFormatAndCodec()
     dumpRawCollection("CURRENT RENDER FORMAT AND CODEC", current)
     if type(current) ~= "table" then fail("GetCurrentRenderFormatAndCodec did not return a table.") end
     state.selected_format = tostring(current.format or "")
     state.selected_codec = tostring(current.codec or "")
+    state.format_display_name = tostring(preset.expected_format_display_name or "")
     logValue("render.current_format", state.selected_format)
     logValue("render.current_codec", state.selected_codec)
-    if state.selected_format ~= formatId or state.selected_codec ~= codecId then
-        fail("Render format/codec exact readback mismatch.")
+    if state.selected_format ~= tostring(preset.expected_format_id)
+        or state.selected_codec ~= tostring(preset.expected_codec_id) then
+        fail("Loaded render preset format/codec readback mismatch.")
     end
-    logLine("RENDER_CODEC=VERIFIED_DNXHR_HQX")
-    return formatId, codecId
+    if tonumber(project:GetCurrentRenderMode()) ~= 1 then fail("Loaded render preset is not Single Clip mode.") end
+    logLine("RENDER PRESET=LOADED_AND_VERIFIED")
 end
 
 local function waitOneSecond()
@@ -497,32 +486,18 @@ local function queueAndStartRender(resolveObject, manager, project, timelineA, t
     stage("A RCM Only Render")
     if renderQueueCount(project) ~= 0 then fail("Render Queue must be empty.") end
     if project:SetCurrentTimeline(timelineA) ~= true then fail("Could not select A timeline for render.") end
-    chooseDnxhrHqx(project)
-    if project:SetCurrentRenderMode(1) ~= true or tonumber(project:GetCurrentRenderMode()) ~= 1 then
-        fail("Single Clip render mode did not read back as 1.")
-    end
+    loadVerifiedRenderPreset(project, profile)
     state.output_dir = tostring(profile.color_test.output_dir)
     state.output_name = tostring(profile.color_test.a_output_basename)
     local settings = {
         SelectAllFrames = true,
         TargetDir = state.output_dir,
-        CustomName = state.output_name,
-        ExportVideo = true,
-        ExportAudio = true,
-        FormatWidth = tonumber(profile.batch.width),
-        FormatHeight = tonumber(profile.batch.height),
-        FrameRate = tonumber(profile.batch.frame_rate),
-        VideoQuality = "Best",
-        AudioCodec = "Linear PCM",
-        AudioBitDepth = 24,
-        AudioSampleRate = 48000,
-        ColorSpaceTag = "Same as Project",
-        GammaTag = "Same as Project",
-        ReplaceExistingFilesInPlace = false
+        CustomName = state.output_name
     }
     local settingsOk = project:SetRenderSettings(settings)
+    logValue("SetRenderSettings.task_fields", "SelectAllFrames,TargetDir,CustomName")
     logValue("SetRenderSettings.return", settingsOk)
-    if settingsOk ~= true then fail("SetRenderSettings did not return true.") end
+    if settingsOk ~= true then fail("Task-only SetRenderSettings did not return true.") end
     local jobId = project:AddRenderJob()
     state.render_job_id = tostring(jobId or "")
     logValue("AddRenderJob.return", state.render_job_id)

@@ -79,3 +79,7 @@ Prefer the DRX path for an immutable long-lived asset because the installed offi
 ## Render codecs appear empty
 
 Do not pass a Deliver-page display label directly to `GetRenderCodecs()` unless the local API has proved that label is also the format ID. `GetRenderFormats()` is a display-name→format-ID dictionary; retain and raw-dump both sides. Call `GetRenderCodecs()` with the verified value, raw-dump the returned bridge collection, and select DNxHR HQX 10-bit only from one unambiguous description→codec-ID pair. A metadata-only or unexpected table is evidence to stop and improve parsing, not evidence that the codec is absent. Never add a Render Job until SET plus exact format/codec readback succeeds.
+
+## Full SetRenderSettings dictionary returns false
+
+Stop removing or guessing keys one by one. Capture a human-verified Deliver configuration as a uniquely named Render Preset. `SaveAsNewRenderPreset()` and `LoadRenderPreset()` are Project methods; `ExportRenderPreset()` is a Resolve method. Refuse duplicate preset names and export-path collisions, prove the saved preset is API-visible, export and hash-pin it, and load it before each master. Automation may then override only documented job-scoped `TargetDir`, `CustomName`, and `SelectAllFrames`. A false task-only call still stops before `AddRenderJob()`.
