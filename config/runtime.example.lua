@@ -10,7 +10,8 @@ return {
     deployment = {
         logic_commit = "PUBLIC_COMMIT_SHORT_SHA",
         logic_sha256 = "PUBLIC_DIAGNOSTIC_ENTRY_SHA256",
-        reference_prep_sha256 = "PUBLIC_REFERENCE_PREP_SCRIPT_SHA256"
+        reference_prep_sha256 = "PUBLIC_REFERENCE_PREP_SCRIPT_SHA256",
+        reference_postflight_sha256 = "PUBLIC_REFERENCE_POSTFLIGHT_SCRIPT_SHA256"
     },
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
@@ -139,6 +140,14 @@ return {
         a_output_basename = "A_RCM_ONLY_MASTER",
         render_authorized = false,
         render_limit = 1,
+        render_timeout_seconds = 7200,
+        existing_timelines_state = "CREATE_NEW_RESET_AUTHORIZED",
+        postflight = {
+            script_path = "C:/ASCII/Temp/SonySLog3AutoGrade/verify_reference_master.ps1",
+            config_path = "C:/ASCII/Temp/SonySLog3AutoGrade/reference_postflight_config.json",
+            status_path = "C:/ASCII/Temp/SonySLog3AutoGrade/reference_postflight.status",
+            report_path = "C:/ASCII/Temp/SonySLog3AutoGrade/reference_postflight_report.json"
+        },
         primary_grade_policy = "HUMAN_APPROVED_REFERENCE_ONLY",
         grade_reproduction_policy = "SHA256_PINNED_DRX_APPLY",
         same_project_copy_policy = "TIMELINE_ITEM_COPYGRADES"

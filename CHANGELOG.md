@@ -32,6 +32,7 @@
 - Verified the complete compatibility path on Resolve 20.3.2 Free for a generic 10-bit 4:2:2 AVC source: hash-bound external evidence, signal-equivalent DNxHR HQX working media, exact import, valid video properties, one real Video Track, one exact TimelineItem, project save, and Edit-page handoff all passed.
 - Documented that the public API does not expose native primary-control setters/readback for Contrast, Pivot, Color Boost, Highlights, Temperature, or Tint. A color test must stop rather than approximate those controls with CDL or undocumented property names when reliable native UI automation is unavailable.
 - Adopted human-approved Reference TimelineItem → official Still/DRX export → SHA-256-pinned DRX → `ApplyGradeFromDRX()` as the immutable primary-grade architecture. Added Reference Prep for one clean RCM-only master timeline and one untouched Color Page seed; `CopyGrades()` remains a same-project copy/cross-check path.
+- Separated render format display names from API format IDs. Reference Prep now raw-dumps both format/codec bridge collections, proves the local display-name→ID mapping, requires exact codec SET/readback, safely resumes previously reset A/B timelines, and gates the Color-page handoff on a completed render plus ffprobe/hash postflight.
 
 ### Safety
 
