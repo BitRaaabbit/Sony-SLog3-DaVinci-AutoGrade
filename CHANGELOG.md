@@ -29,6 +29,8 @@
 - Added `UNSUPPORTED_NATIVE_VIDEO_DECODE`, `COMPATIBILITY_TRANSCODE_REQUIRED`, `FULL_TO_LIMITED_NORMALIZATION`, and `SIGNAL_EQUIVALENCE_GATE` capability rules. Compatibility range representation is explicitly separated from creative grading and colorspace conversion.
 - Added a fail-closed working-media decode gate: exact mapped import, available Resolution/FPS/Video Codec evidence, one validated Video Track TimelineItem, and exact TimelineItem → MediaPoolItem → working-path verification are required for `SUCCESS_DNXHR_COMPATIBILITY_READY`.
 - Removed the invalid requirement that Resolve enumerate original camera media before a compatibility import. Unicode original-path existence is now owned by external filesystem/hash/ffprobe preflight and bound to runtime evidence.
+- Verified the complete compatibility path on Resolve 20.3.2 Free for a generic 10-bit 4:2:2 AVC source: hash-bound external evidence, signal-equivalent DNxHR HQX working media, exact import, valid video properties, one real Video Track, one exact TimelineItem, project save, and Edit-page handoff all passed.
+- Documented that the public API does not expose native primary-control setters/readback for Contrast, Pivot, Color Boost, Highlights, Temperature, or Tint. A color test must stop rather than approximate those controls with CDL or undocumented property names when reliable native UI automation is unavailable.
 
 ### Safety
 

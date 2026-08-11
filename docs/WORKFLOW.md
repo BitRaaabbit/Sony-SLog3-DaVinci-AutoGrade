@@ -56,6 +56,8 @@ Resolve/Fusion bridge collections are never validated with `pairs()` count or ra
 
 For compatibility media, success additionally requires `EXTERNAL MEDIA ATTESTATION=PASS`, `ORIGINAL SOURCE AUTHORITY=EXTERNAL_VERIFIED_ATTESTATION`, `WORKING MEDIA MAPPING=VERIFIED`, `WORKING MEDIA IMPORT=PASS`, a real Video Track, exactly one validated TimelineItem, `WORKING_MEDIA_VIDEO_DECODE=PASS`, and `TIMELINE=ONE_EXACT_WORKING_SOURCE`. The final diagnostic status is `SUCCESS_DNXHR_COMPATIBILITY_READY`. AutoGrade rejects a required working-media mapping until both signal equivalence and Resolve decode have passed; once enabled, it imports the mapped working path but keeps output naming and color policy tied to the original source identity.
 
+A verified Resolve 20.3.2 Free run completed this entire chain with generic DNxHR HQX 10-bit 4:2:2 working media. The imported item exposed valid video+audio type, expected geometry/FPS/codec, one real Video Track, and one exact TimelineItem association before SaveProject and Edit handoff. This establishes compatibility-media eligibility, not look approval.
+
 The stable Workspace launcher and formal Diagnostic logic have separate identities. A launcher canary records its fixed launcher ID, then loads the formal script from disk. The private deployment attestation supplies `logic_commit` and `logic_sha256`, which the formal script records in every log/report. Updating only formal business logic therefore does not require a new menu filename or Resolve restart; a restart is needed only when the launcher itself changes.
 
 ## 5. Compatibility and image review
@@ -69,6 +71,8 @@ If native video decode is unsupported but audio imports, preserve that project a
 Create a separate reference timeline and enter a conservative candidate with native Resolve controls. Do not use a LUT or automatic warming. Review representative people, neutral objects, normal booths, LED/displays, highlights, shadows, and saturated scenes.
 
 The final candidate becomes eligible only after explicit human approval. Record its reference timeline and exact node count in the private runtime profile.
+
+The official scripting API does not provide reliable native setters/readback for the complete requested primary-control set (Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint). Do not substitute CDL values or undocumented keys. If structured API support is unavailable, use a native UI path only when it can be controlled reliably and every displayed value can be read back; otherwise stop before adding a node or rendering.
 
 ## 7. Test and batch
 

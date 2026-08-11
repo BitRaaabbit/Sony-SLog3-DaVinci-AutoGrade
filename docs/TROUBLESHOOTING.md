@@ -40,6 +40,8 @@ Generate a private `EXTERNAL_MEDIA_ATTESTATION` immediately before runtime sync.
 
 Use a fresh diagnostic project from the verified DRP. Import the exact working path and require one real Video Track TimelineItem linked back to that exact MediaPoolItem. `ImportMedia()` returning an object is not enough. Missing/incorrect Resolution, FPS, codec evidence, an audio-only timeline, or a mismatched path stops before grading or rendering.
 
+A successful generic DNxHR HQX compatibility diagnostic on Resolve 20.3.2 Free returned a video+audio MediaPoolItem, expected 10-bit 4:2:2 working geometry/FPS/codec evidence, one real Video Track, one exact TimelineItem-to-MediaPoolItem path match, successful project save, and `SUCCESS_DNXHR_COMPATIBILITY_READY`. Record `resolve_decode_status="PASS"` only after this complete chain, never after import alone.
+
 ## Launcher runs newer formal logic
 
 The Workspace launcher and formal Diagnostic script are intentionally separate. The launcher writes `launcher_id`/`deployment_id`, then loads the formal script from its installed Utility path. Formal logs must also record externally attested `logic_commit` and `logic_sha256`. If the launcher file did not change, deploy the updated formal script and keep the already-enumerated launcher; do not create another menu item or restart Resolve merely for a business-logic commit.
@@ -67,3 +69,7 @@ Do not equate `RootFolder:GetClipList()` userdata count with source-media count.
 - RCM Only already abnormal: inspect source LED/moire/chroma noise revealed by normal Rec.709 contrast.
 - RCM Only normal, Neutral Safe abnormal: reduce grading strength, starting with Color Boost.
 - Resolve and master normal, delivery abnormal: investigate codec, encoder, profile, chroma, bitrate, GOP, hardware encoding, and secondary compression. Do not change color to compensate.
+
+## Native primary values cannot be scripted
+
+The documented API exposes node graphs, node count, LUT/cache operations, DRX application, grade copying, and CDL, but not reliable native setters/readback for Contrast, Pivot, Color Boost, Highlights, Temperature, and Tint. These controls must not be approximated with CDL or guessed property names. If native UI automation is unavailable, keep the source timeline unchanged and stop before creating a candidate node or starting renders.
