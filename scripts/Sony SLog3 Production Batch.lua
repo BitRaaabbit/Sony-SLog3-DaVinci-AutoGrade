@@ -23,50 +23,36 @@ local function contains(v,part)return normalize(v):find(normalize(part),1,true)~
 local function numberEquals(a,b)local x,y=tonumber(a),tonumber(b);return x and y and math.abs(x-y)<0.001 end
 local function fileSize(path)local h=io.open(path,"rb");if not h then return nil end;local n=h:seek("end");h:close();return n end
 local function isSha(v)local s=tostring(v or "");return #s==64 and s:match("^[0-9A-Fa-f]+$")~=nil end
-local function quote(v)return '"'..tostring(v):gsub('"','\\"')..'"'end
-local function psLiteral(v)return "'"..tostring(v):gsub("'","''").."'"end
-local function jsonEscape(v)
-    return tostring(v or ""):gsub("\\","\\\\"):gsub('"','\\"'):gsub("\r","\\r"):gsub("\n","\\n")
+local function waitSecond()
+    if type(bmd)=="table"and type(bmd.wait)=="function"then bmd.wait(1000);return end
+    local untilTime=os.clock()+1;while os.clock()<untilTime do end
 end
-local function writeJson(path,values)
-    local keys={};for key in pairs(values)do keys[#keys+1]=key end;table.sort(keys)
-    local lines={"{"};for index,key in ipairs(keys)do
-        local v=values[key];local encoded
-        if type(v)=="number"then encoded=tostring(v)elseif type(v)=="boolean"then encoded=v and "true"or"false"else encoded='"'..jsonEscape(v)..'"'end
-        lines[#lines+1]='  "'..jsonEscape(key)..'": '..encoded..(index<#keys and ","or"")
-    end;lines[#lines+1]="}"
-    local h=io.open(path,"wb");if not h then fail("Cannot write worker config: "..path)end;h:write(table.concat(lines,"\n"));h:close()
-end
-local function readResult(path)
-    local h=io.open(path,"rb");if not h then return nil end;local result={}
-    for line in h:lines()do local key,v=line:match("^([^=]+)=(.*)$");if key then result[key]=v end end;h:close();return result
-end
-local function commandSucceeded(a,_,c)return a==true or a==0 or c==0 end
-local function runWorker(profile,action,clip,extra)
-    local token=tostring(clip.stem).."_"..string.lower(action)
-    local configPath=ROOT.."/production_"..token..".json"
-    local resultPath=ROOT.."/production_"..token..".result"
-    os.remove(resultPath)
-    local values={
-        result_path=resultPath,ffmpeg_path=profile.production.ffmpeg_path,ffprobe_path=profile.production.ffprobe_path,
-        stem=clip.stem,source_path=clip.source_path,working_path=clip.working_path,working_root=profile.production.working_root,
-        final_path=clip.final_path,report_dir=profile.production.report_dir,
-        expected_frames=clip.frames,expected_duration=clip.duration,
-        protected_working_path=profile.production.protected_working_path,
-        final_dir=profile.production.final_dir
-    }
-    for key,v in pairs(extra or{})do values[key]=v end
-    writeJson(configPath,values)
-    local cmd="powershell.exe -NoProfile -ExecutionPolicy Bypass -File "..quote(profile.production.worker_path)
-        .." -Action "..quote(action).." -ConfigPath "..quote(configPath)
-    local a,b,c=os.execute(cmd);value("worker."..token..".return1",a);value("worker."..token..".return2",b);value("worker."..token..".return3",c)
-    local result=readResult(resultPath)
-    if not commandSucceeded(a,b,c)or not result or result.status~="PASS"then
-        fail("Worker "..action.." failed for "..clip.stem..": "..tostring(result and result.error or "no result"))
+local function loadPreparedManifest(p)
+    local path=tostring(p.production.prepared_manifest_path or "")
+    local loader,loadError=loadfile(path);if not loader then fail("SYSTEMIC: cannot load prepared working manifest: "..tostring(loadError))end
+    local ok,manifest=pcall(loader);if not ok or type(manifest)~="table"then fail("SYSTEMIC: prepared working manifest is invalid: "..tostring(manifest))end
+    if manifest.status~="EXTERNAL_PRETRANSCODE_PASS"or tonumber(manifest.total)~=#p.production.clips or tonumber(manifest.success)~=#p.production.clips or tonumber(manifest.review_needed)~=0 then
+        fail("SYSTEMIC: prepared working manifest summary is not an all-PASS batch.")
     end
-    return result
+    if not isSha(p.production.prepared_manifest_sha256)then fail("SYSTEMIC: prepared manifest SHA-256 attestation is missing.")end
+    local byStem={}
+    for _,entry in ipairs(manifest.entries or{})do
+        local stem=tostring(entry.stem or "")
+        if stem==""or byStem[stem]then fail("SYSTEMIC: prepared manifest has missing/duplicate stem.")end
+        if entry.working_preflight_status~="PASS"or not isSha(entry.working_sha256)or tonumber(entry.working_size or 0)<=0 then fail("SYSTEMIC: prepared working entry is not PASS: "..stem)end
+        if tostring(entry.codec)~="dnxhd"or tostring(entry.profile)~="DNXHR HQX"or tostring(entry.pix_fmt)~="yuv422p10le"then fail("SYSTEMIC: prepared working codec mismatch: "..stem)end
+        if tonumber(entry.width)~=tonumber(p.batch.width)or tonumber(entry.height)~=tonumber(p.batch.height)or not numberEquals(entry.fps,p.batch.frame_rate)then fail("SYSTEMIC: prepared working format mismatch: "..stem)end
+        byStem[stem]=entry
+    end
+    for _,clip in ipairs(p.production.clips)do
+        local entry=byStem[tostring(clip.stem)];if not entry then fail("SYSTEMIC: prepared manifest missing clip: "..tostring(clip.stem))end
+        if pathKey(entry.original_path)~=pathKey(clip.source_path)or tonumber(entry.frames)~=tonumber(clip.frames)or not numberEquals(entry.duration,clip.duration)then fail("SYSTEMIC: prepared manifest original identity mismatch: "..clip.stem)end
+        if pathKey(entry.final_path)~=pathKey(clip.final_path)or entry.final_preflight_status~="ABSENT"then fail("SYSTEMIC: prepared manifest final-path policy mismatch: "..clip.stem)end
+        clip.working_path=tostring(entry.working_path);clip.working_sha256=tostring(entry.working_sha256);clip.working_size=tonumber(entry.working_size)
+        clip.working_preflight_status="PASS";clip.final_preflight_status=tostring(entry.final_preflight_status or "")
+    end
+    log("PREPARED_WORKING_MANIFEST=ALL_PASS")
 end
-local function waitSecond()if type(bmd)=="table"and type(bmd.wait)=="function"then bmd.wait(1000)else os.execute('powershell.exe -NoProfile -Command "Start-Sleep -Seconds 1"')end end
 local function validatedItems(raw,validator)
     local result={};if type(raw)~="table"then return result end
     for _,item in ipairs(raw)do local ok=validator(item);if ok then result[#result+1]=item end end;return result
@@ -170,14 +156,12 @@ local function bootstrap(resolve,manager,p)
     verifyFormat(reference,p)
     verifyRcmReadOnly(reference,"reference_project_rcm","REFERENCE_PROJECT_RCM=VERIFIED")
     if manager:SaveProject()~=true then fail("SYSTEMIC: SaveProject failed for verified Reference Project.")end
-    runWorker(p,"PrepareSeedDirectory",p.production.clips[1],{seed_dir=p.production.seed_dir})
     local seedPath=tostring(p.production.seed_dir).."/SonySLog3_Verified_Production_Seed_"..os.date("%Y%m%d_%H%M%S")..".drp"
     if fileSize(seedPath)~=nil then fail("SYSTEMIC: production seed DRP collision.")end
     local exportOk=manager:ExportProject(referenceName,seedPath,true)
     value("production_seed.export_return",exportOk);value("production_seed.path",seedPath)
     if exportOk~=true or not fileSize(seedPath)or fileSize(seedPath)<=0 then fail("SYSTEMIC: verified Reference Project ExportProject failed.")end
-    local seed=runWorker(p,"InspectArtifact",p.production.clips[1],{artifact_path=seedPath})
-    value("production_seed.size",seed.artifact_size);value("production_seed.sha256",seed.artifact_sha256)
+    value("production_seed.size",fileSize(seedPath))
     if manager:GotoRootFolder()~=true then fail("Could not return to Project Library root folder.")end
     if manager:ImportProject(seedPath,p.project.name)~=true then fail("ImportProject failed for verified production seed.")end
     if not manager:LoadProject(p.project.name)then fail("LoadProject failed after DRP import.")end
@@ -237,36 +221,22 @@ local function renderOne(project,manager,clip,timeline,p)
     return job
 end
 local function outputPolicy(p,clip)
-    local result=runWorker(p,"InspectFinal",clip)
-    if result.output_policy=="NEW"then return "NEW"end
-    if result.output_policy=="SKIP_VERIFIED_EXISTING"then return "SKIP_VERIFIED_EXISTING"end
-    if result.output_policy~="RETRY_NON_OVERWRITE"then fail("Unknown output policy for "..clip.stem)end
-    local retry=clip.stem.."_NEUTRAL_SAFE_MASTER_RETRY_"..os.date("%Y%m%d_%H%M%S")
-    clip.output_basename=retry;clip.final_path=p.production.final_dir.."/"..retry..".mov";return "RETRY_NON_OVERWRITE"
+    if clip.final_preflight_status~="ABSENT"then fail("SYSTEMIC: external final-path preflight is not ABSENT for "..clip.stem)end
+    if fileSize(clip.final_path)~=nil then fail("SYSTEMIC: final target exists; overwrite forbidden: "..clip.final_path)end
+    return "NEW"
 end
 local function processClip(project,manager,p,clip)
     stage("Output Policy")
     local policy=outputPolicy(p,clip);value("clip."..clip.stem..".output_policy",policy)
-    if policy=="SKIP_VERIFIED_EXISTING"then state.skipped=state.skipped+1;state.clips[#state.clips+1]=clip.stem.." | SKIP_VERIFIED_EXISTING";return end
-    local rate=tonumber(p.production.estimated_bytes_per_second)
-    local required=math.floor(rate*tonumber(clip.duration)*2+15*1024*1024*1024)
-    stage("Per-Clip Disk Gate")
-    runWorker(p,"DiskGate",clip,{required_free_bytes=required})
-    stage("Compatibility Transcode")
-    runWorker(p,"Transcode",clip)
+    if clip.working_preflight_status~="PASS"then fail("SYSTEMIC: clip is not externally prepared: "..clip.stem)end
     stage("Resolve Import and Grade")
     local timeline=createAndGrade(project,clip,p)
     stage("Master Render")
     renderOne(project,manager,clip,timeline,p)
-    stage("Final Postflight")
-    local result=runWorker(p,"VerifyFinal",clip)
-    stage("Verified Working Cleanup")
-    runWorker(p,"DeleteWorking",clip)
+    stage("Resolve Render Complete / External Postflight Pending")
+    value("clip."..clip.stem..".external_postflight","PENDING")
     state.success=state.success+1
-    state.clips[#state.clips+1]=clip.stem.." | PASS | "..tostring(result.final_path).." | "..tostring(result.final_sha256)
-        .." | "..tostring(result.final_profile).." | "..tostring(result.final_pix_fmt)
-        .." | "..tostring(result.final_width).."x"..tostring(result.final_height)
-        .." | "..tostring(result.final_fps).." fps | "..tostring(result.final_frames).." frames | "..tostring(result.final_duration).." s"
+    state.clips[#state.clips+1]=clip.stem.." | RENDER_COMPLETED_PENDING_EXTERNAL_POSTFLIGHT | "..tostring(clip.final_path)
     if manager:SaveProject()~=true then fail("SaveProject failed after clip completion.")end
 end
 local function writeReport()
@@ -290,14 +260,12 @@ local function main()
     if p.batch.homogeneous_metadata_verified~=true or normalize(p.batch.gamma)~="s-log3"or normalize(p.batch.primaries)~="sonys-gamut3.cine"then fail("SYSTEMIC: verified homogeneous Sony input policy missing.")end
     log("INPUT_COLOR_POLICY=FROM_VERIFIED_ORIGINAL_SOURCE_METADATA")
     if not isSha(p.look.reference_drx_sha256)or fileSize(p.look.reference_drx_path)~=tonumber(p.look.reference_drx_size)then fail("SYSTEMIC: locked DRX declaration invalid.")end
-    runWorker(p,"ArtifactGate",p.production.clips[1],{artifact_path=p.look.reference_drx_path,expected_size=p.look.reference_drx_size,expected_sha256=p.look.reference_drx_sha256})
-    runWorker(p,"ArtifactGate",p.production.clips[1],{artifact_path=p.render_preset.export_path,expected_size=p.render_preset.export_size,expected_sha256=p.render_preset.sha256})
-    runWorker(p,"PrepareDirectories",p.production.clips[1])
-    runWorker(p,"DiskGate",p.production.clips[1],{required_free_bytes=p.production.initial_required_free_bytes})
+    if p.production.external_artifact_preflight_status~="PASS"then fail("SYSTEMIC: external DRX/render-preset artifact preflight is missing.")end
+    if p.look.reference_drx_sha256~=p.production.prepared_reference_drx_sha256 or p.render_preset.sha256~=p.production.prepared_render_preset_sha256 then fail("SYSTEMIC: prepared artifact SHA-256 attestations do not match runtime assets.")end
+    loadPreparedManifest(p)
     local appObject=rawget(_G,"app");local resolve=appObject and appObject:GetResolve()or nil;local manager=resolve and resolve:GetProjectManager()or nil
     if not manager then fail("SYSTEMIC: Resolve internal objects unavailable.")end
     local project=bootstrap(resolve,manager,p)
-    local previousClass=nil;local consecutive=0
     for index,clip in ipairs(p.production.clips)do
         local subBatchSize=tonumber(p.production.sub_batch_size) or 10
         value("batch.index",index);value("batch.sub_batch",math.floor((index-1)/subBatchSize)+1)
@@ -308,10 +276,8 @@ local function main()
             state.failed=state.failed+1;state.review=state.review+1;state.errors[#state.errors+1]=clip.stem.." | "..message;state.clips[#state.clips+1]=clip.stem.." | REVIEW_NEEDED"
             value("clip."..clip.stem..".error",message)
             if renderQueueCount(project)>0 then pcall(function()project:DeleteAllRenderJobs()end)end
-            if message:find("SYSTEMIC:",1,true)or message:find("Disk gate failed",1,true)then fail(message)end
-            if class==previousClass then consecutive=consecutive+1 else previousClass=class;consecutive=1 end
-            if consecutive>=2 then fail("SYSTEMIC: two consecutive failures at "..class)end
-        else previousClass=nil;consecutive=0 end
+            if message:find("SYSTEMIC:",1,true)then fail(message)end
+        end
         state.status="RUNNING_"..tostring(index).."_OF_"..tostring(#p.production.clips)
         writeReport()
         if index%subBatchSize==0 or index==#p.production.clips then
@@ -319,16 +285,10 @@ local function main()
             if manager:SaveProject()~=true then fail("SaveProject failed at sub-batch boundary.")end
         end
     end
-    state.status=state.failed==0 and "FULL_PRODUCTION_BATCH_PASS"or"FULL_PRODUCTION_BATCH_COMPLETED_WITH_REVIEW"
+    state.status=state.failed==0 and "RESOLVE_PRODUCTION_RENDER_PASS_PENDING_EXTERNAL_POSTFLIGHT"or"RESOLVE_PRODUCTION_RENDER_COMPLETED_WITH_REVIEW"
     resolve:OpenPage("edit");manager:SaveProject()
 end
 
 log("");log("============================================================");log("PRODUCTION BATCH START");value("timestamp",os.date("%Y-%m-%d %H:%M:%S %z"))
 local ok,err=xpcall(main,traceback);if not ok then state.status="SYSTEMIC_ERROR_STOPPED";state.errors[#state.errors+1]=tostring(err);value("error",err)end
 writeReport();log("STOP");value("final.status",state.status)
-if state.profile and state.profile.production and state.profile.production.report_path then
-    local published,publishError=pcall(function()
-        runWorker(state.profile,"PublishReport",state.profile.production.clips[1],{source_report=REPORT_PATH,destination_report=state.profile.production.report_path})
-    end)
-    value("report.publish",published and "PASS"or("FAIL: "..tostring(publishError)))
-end

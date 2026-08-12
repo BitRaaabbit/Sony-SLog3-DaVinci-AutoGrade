@@ -14,6 +14,9 @@ return {
         reference_postflight_sha256 = "PUBLIC_REFERENCE_POSTFLIGHT_SCRIPT_SHA256",
         render_preset_capture_sha256 = "PUBLIC_RENDER_PRESET_CAPTURE_SCRIPT_SHA256"
     },
+    -- Production additionally binds a private all-PASS prepared-working Lua
+    -- manifest created by external pretranscode. Resolve does not launch
+    -- PowerShell/FFmpeg/ffprobe or delete compatibility media.
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
         -- Production may instead use "verified_reference_project_clone":

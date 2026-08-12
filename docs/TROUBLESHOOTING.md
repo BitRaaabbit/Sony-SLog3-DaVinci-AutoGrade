@@ -84,6 +84,8 @@ Read the private production log and per-clip worker result. Disk, DRP, DRX, Rend
 
 If a fresh project rejects an independently verified RCM setter even after the correct separate-gamut/gamma sequence, stop treating it as a value-discovery problem. Preserve the partial project as evidence. Production should clone the exact machine-verified Reference Project through `ExportProject`/`ImportProject`, then accept only complete read-only Project Format and RCM matches before transcoding. Never repair inherited RCM with setters.
 
+Windows exit `-1073741510` / `0xC000013A` means `STATUS_CONTROL_C_EXIT`, not an FFmpeg codec failure. If it occurs in `Resolve Lua → os.execute → PowerShell → FFmpeg`, preserve incomplete files for diagnosis and move long external work out of Resolve. Use atomic `.partial.mov` generation plus external validation; do not retry the same long synchronous process under the Resolve console group.
+
 ## Render codecs appear empty
 
 Do not pass a Deliver-page display label directly to `GetRenderCodecs()` unless the local API has proved that label is also the format ID. `GetRenderFormats()` is a display-name→format-ID dictionary; retain and raw-dump both sides. Call `GetRenderCodecs()` with the verified value, raw-dump the returned bridge collection, and select DNxHR HQX 10-bit only from one unambiguous description→codec-ID pair. A metadata-only or unexpected table is evidence to stop and improve parsing, not evidence that the codec is absent. Never add a Render Job until SET plus exact format/codec readback succeeds.
