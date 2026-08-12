@@ -198,16 +198,22 @@ local function outputPolicy(p,clip)
     clip.output_basename=retry;clip.final_path=p.production.final_dir.."/"..retry..".mov";return "RETRY_NON_OVERWRITE"
 end
 local function processClip(project,manager,p,clip)
-    stage("Clip "..clip.stem)
+    stage("Output Policy")
     local policy=outputPolicy(p,clip);value("clip."..clip.stem..".output_policy",policy)
     if policy=="SKIP_VERIFIED_EXISTING"then state.skipped=state.skipped+1;state.clips[#state.clips+1]=clip.stem.." | SKIP_VERIFIED_EXISTING";return end
     local rate=tonumber(p.production.estimated_bytes_per_second)
     local required=math.floor(rate*tonumber(clip.duration)*2+15*1024*1024*1024)
+    stage("Per-Clip Disk Gate")
     runWorker(p,"DiskGate",clip,{required_free_bytes=required})
+    stage("Compatibility Transcode")
     runWorker(p,"Transcode",clip)
+    stage("Resolve Import and Grade")
     local timeline=createAndGrade(project,clip,p)
+    stage("Master Render")
     renderOne(project,manager,clip,timeline,p)
+    stage("Final Postflight")
     local result=runWorker(p,"VerifyFinal",clip)
+    stage("Verified Working Cleanup")
     runWorker(p,"DeleteWorking",clip)
     state.success=state.success+1
     state.clips[#state.clips+1]=clip.stem.." | PASS | "..tostring(result.final_path).." | "..tostring(result.final_sha256)
@@ -251,7 +257,7 @@ local function main()
         local clipOk,clipError=xpcall(function()processClip(project,manager,p,clip)end,traceback)
         if not clipOk then
             local message=tostring(clipError)
-            local class=message:match("Worker ([A-Za-z]+) failed")or message:match("([A-Za-z ]+failed)")or"PER_CLIP_UNKNOWN"
+            local class=state.stage
             state.failed=state.failed+1;state.review=state.review+1;state.errors[#state.errors+1]=clip.stem.." | "..message;state.clips[#state.clips+1]=clip.stem.." | REVIEW_NEEDED"
             value("clip."..clip.stem..".error",message)
             if renderQueueCount(project)>0 then pcall(function()project:DeleteAllRenderJobs()end)end
