@@ -27,6 +27,8 @@ return {
         -- a private DRP, then import it under the unique diagnostic name.
         bootstrap_method = "drp_template",
         template_path = "C:/ASCII/Path/To/Templates/SonySLog3_Format_Base.drp",
+        template_size = 1,
+        template_sha256 = "PRIVATE_TEMPLATE_SHA256",
         template_capture_project_name = "Sony_SLog3_Format_Template_Source",
         -- Optional alternative when GetPresetList exposes an exact verified
         -- preset. Ignored by the drp_template method.
@@ -158,6 +160,7 @@ return {
         capture_status = "PENDING_HUMAN_VERIFIED_CAPTURE",
         status = "PENDING_CAPTURE",
         export_path = "C:/ASCII/Temp/SonySLog3AutoGrade/render_presets/SonySLog3_DNxHR_HQX_4K50_Master.xml",
+        export_size = 1,
         hash_result_path = "C:/ASCII/Temp/SonySLog3AutoGrade/render_presets/SonySLog3_DNxHR_HQX_4K50_Master.sha256",
         sha256 = "",
         expected_format_display_name = "QuickTime",
@@ -169,7 +172,40 @@ return {
         name = "Neutral Safe",
         status = "test_candidate_not_approved",
         approved = false,
-        reference_timeline = ""
+        reference_timeline = "",
+        reference_grade_status = "PENDING",
+        reference_drx_path = "C:/ASCII/Temp/SonySLog3AutoGrade/reference_grades/Human_Approved_Reference.drx",
+        reference_drx_sha256 = "PRIVATE_REFERENCE_DRX_SHA256",
+        reference_drx_size = 1
+    },
+    -- Optional only after explicit full-production authorization. Real paths,
+    -- manifests, hashes, durations, and frame counts remain private.
+    production = {
+        status = "NOT_AUTHORIZED",
+        expected_clip_count = 1,
+        sub_batch_size = 10,
+        worker_path = "C:/ASCII/Temp/SonySLog3AutoGrade/Invoke Sony SLog3 Production Worker.ps1",
+        ffmpeg_path = "C:/PrivateTools/ffmpeg.exe",
+        ffprobe_path = "C:/PrivateTools/ffprobe.exe",
+        working_root = "D:/PrivateWorking/production_temp",
+        protected_working_path = "D:/PrivateWorking/REFERENCE_DNxHR_HQX.mov",
+        final_dir = "D:/PrivateOutput/final",
+        report_dir = "D:/PrivateReports/production_batch",
+        report_path = "D:/PrivateReports/production_batch/production_batch_report.md",
+        estimated_bytes_per_second = 1,
+        initial_required_free_bytes = 1,
+        render_timeout_seconds = 14400,
+        clips = {
+            {
+                stem = "SONY_SLOG3_CLIP_002",
+                source_path = "D:/ReadOnlySource/SONY_SLOG3_CLIP_002.MP4",
+                working_path = "D:/PrivateWorking/production_temp/SONY_SLOG3_CLIP_002_DNxHR_HQX.mov",
+                output_basename = "SONY_SLOG3_CLIP_002_NEUTRAL_SAFE_MASTER",
+                final_path = "D:/PrivateOutput/final/SONY_SLOG3_CLIP_002_NEUTRAL_SAFE_MASTER.mov",
+                frames = 1000,
+                duration = 40.0
+            }
+        }
     },
     authorization = {
         test_approved = false,

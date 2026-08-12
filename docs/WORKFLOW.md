@@ -86,6 +86,8 @@ Resolve may add a uniqueness suffix to a DRX export filename. Artifact identity 
 
 Switch profile mode to `test`, list at most three representative clips, and explicitly authorize test plus render start. Review every output. Only then set batch authorization. Each batch invocation is capped at ten clips and refuses a non-empty render queue or existing output overwrite.
 
+For an explicitly authorized full production run, use the one-trigger production state machine in logical sub-batches of at most ten. It processes one clip at a time: verified original → temporary decode-compatible DNxHR → one-source timeline → SHA-256-pinned DRX → human-verified master preset → render completion → ffprobe/SHA-256 postflight → authorized temporary-working cleanup. The original, reference working media, reference masters, DRX, DRP, reports, and final masters are never cleanup targets. Per-clip failures retain working media and continue; systemic gates stop the run.
+
 ## 8. Display/LED regression
 
 Compare the same frame through Original Log, RCM Only, Neutral Safe, a high-quality low-loss master, and delivery H.264/H.265. Do not change color to hide a delivery encoder defect.

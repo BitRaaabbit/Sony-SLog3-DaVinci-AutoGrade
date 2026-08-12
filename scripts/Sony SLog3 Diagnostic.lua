@@ -18,6 +18,14 @@ do
             if not chunk then error("Reference Prep dispatch failed: " .. tostring(loadError), 0) end
             return chunk()
         end
+        if runtimeOk and type(runtimeProfile) == "table" and runtimeProfile.mode == "production_batch" then
+            local appData = (os.getenv("APPDATA") or ""):gsub("\\", "/")
+            local target = appData
+                .. "/Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Utility/Sony SLog3 Production Batch.lua"
+            local chunk, loadError = loadfile(target)
+            if not chunk then error("Production Batch dispatch failed: " .. tostring(loadError), 0) end
+            return chunk()
+        end
     end
 end
 

@@ -35,6 +35,7 @@
 - Separated render format display names from API format IDs. Reference Prep now raw-dumps both format/codec bridge collections, proves the local display-name→ID mapping, requires exact codec SET/readback, safely resumes previously reset A/B timelines, and gates the Color-page handoff on a completed render plus ffprobe/hash postflight.
 - Replaced brittle reconstruction of master render settings with a human-verified immutable Render Preset. A dedicated internal Capture Utility uses `Project:SaveAsNewRenderPreset()`, proves exact visibility, exports through `Resolve:ExportRenderPreset()`, and records SHA-256; Reference Prep uses `Project:LoadRenderPreset()` and overrides only the three documented job fields.
 - Made DRX artifact discovery suffix-safe by validating the exact pre/post export snapshot delta, then pinning the actual Resolve-generated filename, size, and SHA-256. Recovery of an already completed export requires matching log time and a unique candidate; it never re-exports or guesses the newest file.
+- Added a one-trigger production state machine with storage gating, one-clip compatibility transcode/render lifecycle, immutable DRX replication, human-verified master preset loading, per-clip failure isolation, logical 10+N batching, hard final postflight, and constrained cleanup of verified rebuildable working media.
 
 ### Safety
 
