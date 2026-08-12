@@ -99,24 +99,56 @@ local function verifyFormat(project,p)
         {"timelineResolutionWidth",p.batch.width},{"timelineResolutionHeight",p.batch.height}
     })do local actual=project:GetSetting(check[1]);value("project."..check[1],actual);if not numberEquals(actual,check[2])then fail("Project format mismatch: "..check[1])end end
 end
-local function setRead(project,key,candidates,validator)
+local function setReadCompare(project,key,candidates,validator,label)
     for _,candidate in ipairs(candidates)do
-        local ok=project:SetSetting(key,candidate);local actual=project:GetSetting(key)
-        value("setting."..key..".requested",candidate);value("setting."..key..".set",ok);value("setting."..key..".read",actual)
-        if ok==true and validator(actual)then return end
-    end;fail("RCM setting failed: "..key)
+        local setCallOk,setResult=pcall(function()return project:SetSetting(key,candidate)end)
+        local readCallOk,actual=pcall(function()return project:GetSetting(key)end)
+        value("setting."..key..".requested",candidate)
+        value("setting."..key..".set_call_ok",setCallOk)
+        value("setting."..key..".set_return",setResult)
+        value("setting."..key..".read_call_ok",readCallOk)
+        value("setting."..key..".read_back",actual)
+        local matched=readCallOk and validator(actual)
+        value("setting."..key..".compare",matched and "MATCH"or"MISMATCH")
+        if matched then return actual end
+    end;fail("SET/READ BACK/COMPARE failed for "..label.."; actual="..tostring(project:GetSetting(key)))
 end
 local function configureRcm(project)
-    setRead(project,"colorScienceMode",{"davinciYRGBColorManagedv2","davinciYRGBColorManaged"},function(v)return contains(v,"managed")end)
-    setRead(project,"rcmPresetMode",{"Custom"},function(v)return contains(v,"custom")end)
-    setRead(project,"isAutoColorManage",{"0"},function(v)return tostring(v)=="0"or normalize(v)=="false"end)
-    setRead(project,"colorSpaceInput",{"Sony S-Gamut3.Cine"},function(v)return contains(v,"s-gamut3.cine")end)
-    setRead(project,"colorSpaceInputGamma",{"S-Log3"},function(v)return contains(v,"s-log3")end)
-    setRead(project,"colorSpaceTimeline",{"DaVinci WG","DaVinci Wide Gamut"},function(v)return contains(v,"davinci")and(contains(v,"wg")or contains(v,"widegamut"))end)
-    setRead(project,"colorSpaceTimelineGamma",{"DaVinci Intermediate"},function(v)return contains(v,"intermediate")end)
-    setRead(project,"colorSpaceOutput",{"Rec.709"},function(v)return contains(v,"rec.709")or contains(v,"rec709")end)
-    setRead(project,"colorSpaceOutputGamma",{"Gamma 2.4"},function(v)return contains(v,"2.4")end)
+    setReadCompare(project,"colorScienceMode",{"davinciYRGBColorManagedv2","davinciYRGBColorManaged"},function(v)return contains(v,"color")and contains(v,"managed")end,"DaVinci YRGB Color Managed")
+    setReadCompare(project,"rcmPresetMode",{"Custom"},function(v)return contains(v,"custom")end,"RCM Custom")
+    setReadCompare(project,"isAutoColorManage",{"0","false"},function(v)return tostring(v)=="0"or normalize(v)=="false"end,"Automatic Color Management OFF")
+    setReadCompare(project,"separateColorSpaceAndGamma",{"1"},function(v)return tostring(v)=="1"or normalize(v)=="true"end,"Separate Color Space and Gamma")
+    setReadCompare(project,"colorSpaceInput",{"Sony S-Gamut3.Cine","S-Gamut3.Cine"},function(v)return contains(v,"s-gamut3.cine")end,"Input Sony S-Gamut3.Cine")
+    setReadCompare(project,"colorSpaceInputGamma",{"S-Log3"},function(v)return contains(v,"s-log3")end,"Input S-Log3")
+    setReadCompare(project,"colorSpaceTimeline",{"DaVinci WG","DaVinci Wide Gamut"},function(v)return contains(v,"davinci")and(contains(v,"wg")or contains(v,"widegamut"))end,"Timeline DaVinci Wide Gamut")
+    setReadCompare(project,"colorSpaceTimelineGamma",{"DaVinci Intermediate"},function(v)return contains(v,"intermediate")end,"Timeline DaVinci Intermediate")
+    setReadCompare(project,"colorSpaceOutput",{"Rec.709"},function(v)return contains(v,"rec.709")or contains(v,"rec709")end,"Output Rec.709")
+    setReadCompare(project,"colorSpaceOutputGamma",{"Gamma 2.4","Gamma2.4"},function(v)return contains(v,"2.4")end,"Output Gamma 2.4")
     log("RCM=ALL_MATCH")
+end
+local function verifyFinalRcm(project)
+    local checks={
+        {"colorScienceMode",function(v)return contains(v,"color")and contains(v,"managed")end},
+        {"rcmPresetMode",function(v)return contains(v,"custom")end},
+        {"isAutoColorManage",function(v)return tostring(v)=="0"or normalize(v)=="false"end},
+        {"separateColorSpaceAndGamma",function(v)return tostring(v)=="1"or normalize(v)=="true"end},
+        {"colorSpaceInput",function(v)return contains(v,"s-gamut3.cine")end},
+        {"colorSpaceInputGamma",function(v)return contains(v,"s-log3")end},
+        {"colorSpaceTimeline",function(v)return contains(v,"davinci")and(contains(v,"wg")or contains(v,"widegamut"))end},
+        {"colorSpaceTimelineGamma",function(v)return contains(v,"intermediate")end},
+        {"colorSpaceOutput",function(v)return contains(v,"rec.709")or contains(v,"rec709")end},
+        {"colorSpaceOutputGamma",function(v)return contains(v,"2.4")end}
+    }
+    for _,entry in ipairs(checks)do
+        local key,validator=entry[1],entry[2]
+        local readCallOk,actual=pcall(function()return project:GetSetting(key)end)
+        local matched=readCallOk and validator(actual)
+        value("production_rcm_final."..key..".read_call_ok",readCallOk)
+        value("production_rcm_final."..key..".read_back",actual)
+        value("production_rcm_final."..key..".compare",matched and "MATCH"or"MISMATCH")
+        if not matched then fail("Production final RCM verification failed for "..key.."; actual="..tostring(actual))end
+    end
+    log("PRODUCTION_RCM_FINAL_VERIFY=ALL_MATCH")
 end
 local function renderQueueCount(project)
     local count=0;for _,job in ipairs(project:GetRenderJobList()or{})do if type(job)=="table"or type(job)=="userdata"then count=count+1 end end;return count
@@ -137,7 +169,7 @@ local function bootstrap(resolve,manager,p)
     local rootClips=validatedItems(root:GetClipList()or{},function(item)return type(item)=="userdata"end)
     local rootFolders=validatedItems(root:GetSubFolderList()or{},function(item)return type(item)=="userdata"end)
     if #rootClips~=0 or #rootFolders~=0 or tonumber(project:GetTimelineCount())~=0 or renderQueueCount(project)~=0 then fail("Imported production template is not blank.")end
-    configureRcm(project);verifyFormat(project,p)
+    configureRcm(project);verifyFormat(project,p);verifyFinalRcm(project)
     if manager:SaveProject()~=true then fail("SaveProject failed after production bootstrap.")end
     state.project=p.project.name;return project
 end

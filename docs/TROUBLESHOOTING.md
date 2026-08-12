@@ -82,6 +82,8 @@ If `ExportStills()` returns true but the exact requested DRX path is absent, ins
 
 Read the private production log and per-clip worker result. Disk, DRP, DRX, Render Preset, RCM, and Resolve-object failures are systemic and stop before the next clip. A media-specific transcode, import, grade, render, or postflight failure is `REVIEW_NEEDED`; retain its working media and continue unless the same failure class repeats consecutively. Cleanup is eligible only after Render Job completion plus ffprobe and SHA-256 PASS, and only for a validated file inside the declared temporary working root.
 
+If production reads a combined value such as `Rec.709 Gamma 2.4` from `colorSpaceInput` and rejects `Sony S-Gamut3.Cine`, audit sequence drift first. `separateColorSpaceAndGamma=1` must be read back before setting standalone gamut and gamma fields. Do not reuse the partially configured project; preserve it for diagnosis and bootstrap a uniquely named project from the verified blank DRP.
+
 ## Render codecs appear empty
 
 Do not pass a Deliver-page display label directly to `GetRenderCodecs()` unless the local API has proved that label is also the format ID. `GetRenderFormats()` is a display-name→format-ID dictionary; retain and raw-dump both sides. Call `GetRenderCodecs()` with the verified value, raw-dump the returned bridge collection, and select DNxHR HQX 10-bit only from one unambiguous description→codec-ID pair. A metadata-only or unexpected table is evidence to stop and improve parsing, not evidence that the codec is absent. Never add a Render Job until SET plus exact format/codec readback succeeds.
