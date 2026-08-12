@@ -11,6 +11,16 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
 }
 
+function Convert-ToCanonicalPath {
+    param([string]$Path)
+    return [IO.Path]::GetFullPath($Path)
+}
+
+function Convert-ToLuaString {
+    param([string]$Value)
+    return '"' + $Value.Replace('\', '/').Replace('"', '\"') + '"'
+}
+
 function Parse-Rate {
     param([string]$Value)
     if ($Value -match '^(-?[0-9]+(?:\.[0-9]+)?)/(-?[0-9]+(?:\.[0-9]+)?)$') {
@@ -123,15 +133,15 @@ function Save-State {
     foreach ($entry in $script:State.entries) {
         $finalPath = Join-Path ([string]$script:Config.final_dir) (([string]$entry.stem) + '_NEUTRAL_SAFE_MASTER.mov')
         $finalStatus = if (Test-Path -LiteralPath $finalPath) { 'EXISTS' } else { 'ABSENT' }
-        function Q([string]$Value) { return '"' + $Value.Replace('\', '/').Replace('"', '\"') + '"' }
         $luaLines += '    {'
         foreach ($pair in @(
-            @('stem', (Q ([string]$entry.stem))), @('original_path', (Q ([string]$entry.original_path))),
-            @('working_path', (Q ([string]$entry.working_path))), @('working_sha256', (Q ([string]$entry.working_sha256))),
+            @('stem', (Convert-ToLuaString ([string]$entry.stem))), @('original_path', (Convert-ToLuaString ([string]$entry.original_path))),
+            @('canonical_original_path', (Convert-ToLuaString ([string]$entry.canonical_original_path))),
+            @('working_path', (Convert-ToLuaString ([string]$entry.working_path))), @('working_sha256', (Convert-ToLuaString ([string]$entry.working_sha256))),
             @('working_size', [string]$entry.working_size), @('frames', [string]$entry.frames), @('duration', ([string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.###}', [double]$entry.duration))),
-            @('codec', (Q ([string]$entry.codec))), @('profile', (Q ([string]$entry.profile))), @('pix_fmt', (Q ([string]$entry.pix_fmt))),
+            @('codec', (Convert-ToLuaString ([string]$entry.codec))), @('profile', (Convert-ToLuaString ([string]$entry.profile))), @('pix_fmt', (Convert-ToLuaString ([string]$entry.pix_fmt))),
             @('width', [string]$entry.width), @('height', [string]$entry.height), @('fps', ([string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.###}', [double]$entry.fps))),
-            @('working_preflight_status', (Q ([string]$entry.working_preflight_status))), @('final_path', (Q $finalPath)), @('final_preflight_status', (Q $finalStatus))
+            @('working_preflight_status', (Convert-ToLuaString ([string]$entry.working_preflight_status))), @('final_path', (Convert-ToLuaString $finalPath)), @('final_preflight_status', (Convert-ToLuaString $finalStatus))
         )) { $luaLines += "      $($pair[0]) = $($pair[1])," }
         $luaLines += '    },'
     }
@@ -229,6 +239,7 @@ foreach ($clip in @($script:Config.clips)) {
         $hash = (Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash
         $entry = [ordered]@{
             stem = $stem; original_path = $source
+            canonical_original_path = Convert-ToCanonicalPath $source
             original_codec = $sourceFacts.codec; original_profile = $sourceFacts.profile
             original_pix_fmt = $sourceFacts.pix_fmt; original_range = $sourceFacts.range
             working_path = $final; working_sha256 = $hash; working_size = $workingFacts.size

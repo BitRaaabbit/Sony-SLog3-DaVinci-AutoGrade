@@ -46,7 +46,8 @@ local function loadPreparedManifest(p)
     end
     for _,clip in ipairs(p.production.clips)do
         local entry=byStem[tostring(clip.stem)];if not entry then fail("SYSTEMIC: prepared manifest missing clip: "..tostring(clip.stem))end
-        if pathKey(entry.original_path)~=pathKey(clip.source_path)or tonumber(entry.frames)~=tonumber(clip.frames)or not numberEquals(entry.duration,clip.duration)then fail("SYSTEMIC: prepared manifest original identity mismatch: "..clip.stem)end
+        if tostring(entry.canonical_original_path or "")==""or tostring(clip.canonical_source_path or "")==""then fail("SYSTEMIC: canonical original identity is missing: "..clip.stem)end
+        if pathKey(entry.canonical_original_path)~=pathKey(clip.canonical_source_path)or tonumber(entry.frames)~=tonumber(clip.frames)or not numberEquals(entry.duration,clip.duration)then fail("SYSTEMIC: prepared manifest canonical original identity mismatch: "..clip.stem)end
         if pathKey(entry.final_path)~=pathKey(clip.final_path)or entry.final_preflight_status~="ABSENT"then fail("SYSTEMIC: prepared manifest final-path policy mismatch: "..clip.stem)end
         clip.working_path=tostring(entry.working_path);clip.working_sha256=tostring(entry.working_sha256);clip.working_size=tonumber(entry.working_size)
         clip.working_preflight_status="PASS";clip.final_preflight_status=tostring(entry.final_preflight_status or "")
