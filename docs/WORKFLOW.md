@@ -80,6 +80,8 @@ Do not reconstruct a full master Deliver configuration through a large `SetRende
 
 After a human grades and approves the seed, treat that TimelineItem as immutable. The installed README documents the complete artifact chain: `Timeline:GrabStill()`, `GalleryStillAlbum:ExportStills(..., "drx")`, and `Graph:ApplyGradeFromDRX(path, gradeMode)`. The preferred long-term path exports the approved grade as a private DRX, pins its SHA-256 externally, and applies that exact artifact. `TimelineItem:CopyGrades([targets])` remains a direct same-project copy and cross-check path. Target validation uses reference identity, node count/graph evidence, artifact SHA-256, API success, and render regression—not hidden Primary readback.
 
+Resolve may add a uniqueness suffix to a DRX export filename. Artifact identity is therefore established by a pre-export/post-export directory snapshot delta: exactly one new non-empty `.drx` must have the requested basename as its prefix. The workflow never guesses by modification time or adopts an old file. Once the actual path, size, and SHA-256 are recorded, the DRX is immutable and resume runs verify it without grabbing another still or exporting again.
+
 ## 7. Test and batch
 
 Switch profile mode to `test`, list at most three representative clips, and explicitly authorize test plus render start. Review every output. Only then set batch authorization. Each batch invocation is capped at ten clips and refuses a non-empty render queue or existing output overwrite.

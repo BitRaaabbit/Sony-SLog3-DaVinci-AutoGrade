@@ -76,6 +76,8 @@ The documented API exposes node graphs, node count, LUT/cache operations, `Timel
 
 Prefer the DRX path for an immutable long-lived asset because the installed official README explicitly supports still capture, DRX export, and graph application. Verify the exported file exists, is non-empty, and has the recorded SHA-256 before any application. `CopyGrades()` is appropriate for same-project direct copying and regression comparison, but reference TimelineItem identity and node count alone do not freeze hidden grade values.
 
+If `ExportStills()` returns true but the exact requested DRX path is absent, inspect the pre/post snapshot delta rather than exporting again. Resolve can append a suffix such as `_1.1.1`. Accept only the single new non-empty DRX whose basename begins with the requested prefix; zero, multiple, unrelated, or pre-existing candidates stop. Never use a generic "newest DRX" fallback.
+
 ## Render codecs appear empty
 
 Do not pass a Deliver-page display label directly to `GetRenderCodecs()` unless the local API has proved that label is also the format ID. `GetRenderFormats()` is a display-name→format-ID dictionary; retain and raw-dump both sides. Call `GetRenderCodecs()` with the verified value, raw-dump the returned bridge collection, and select DNxHR HQX 10-bit only from one unambiguous description→codec-ID pair. A metadata-only or unexpected table is evidence to stop and improve parsing, not evidence that the codec is absent. Never add a Render Job until SET plus exact format/codec readback succeeds.
