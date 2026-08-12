@@ -3,6 +3,7 @@
 - Replaced fresh-project production RCM setters with a verified Reference Project export/import clone, complete read-only verification before and after cloning, isolated clone Render Queue cleanup, and a protected `PROD_` timeline namespace.
 - Split production into external atomic pretranscode, Resolve-only grade/render, and external postflight/cleanup so long FFmpeg jobs never inherit Resolve's internal Lua control-event boundary.
 - Added explicit UTF-8 Windows canonical original-path identity to prepared manifests and private production runtime, preventing mojibake path serialization from invalidating already verified working media.
+- Demoted localized `GetRenderJobStatus()` text to diagnostic-only evidence, added a stable non-empty output-ready gate after `IsRenderingInProgress()` ends, and added attested resume of externally verified finals and exact existing production timelines.
 
 ## Unreleased — generic Sony S-Log3 workflow
 

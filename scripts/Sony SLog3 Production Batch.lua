@@ -8,6 +8,7 @@ local RUNTIME_PATH = ROOT .. "/runtime.lua"
 local LOG_PATH = ROOT .. "/production_batch.log"
 local REPORT_PATH = ROOT .. "/production_batch_report.md"
 local EMERGENCY_PATH = TEMP_ROOT .. "/SonySLog3AutoGrade_production_emergency.log"
+local RESUME_STATE_PATH = ROOT .. "/production_resume_state.lua"
 
 local state = {status="STARTING",stage="bootstrap",project="",success=0,failed=0,skipped=0,review=0,clips={},errors={}}
 
@@ -21,8 +22,17 @@ local function normalize(v)return string.lower(tostring(v or ""):gsub("%s+",""))
 local function pathKey(v)return string.lower(tostring(v or ""):gsub("\\","/"))end
 local function contains(v,part)return normalize(v):find(normalize(part),1,true)~=nil end
 local function numberEquals(a,b)local x,y=tonumber(a),tonumber(b);return x and y and math.abs(x-y)<0.001 end
-local function fileSize(path)local h=io.open(path,"rb");if not h then return nil end;local n=h:seek("end");h:close();return n end
+local function fileSize(path)
+    if type(bmd)=="table"and type(bmd.readdir)=="function"then
+        local ok,entries=pcall(function()return bmd.readdir(path)end)
+        if ok and type(entries)=="table"then
+            for _,entry in ipairs(entries)do if type(entry)=="table"and entry.IsDir~=true and tonumber(entry.Size)then return tonumber(entry.Size)end end
+        end
+    end
+    local h=io.open(path,"rb");if not h then return nil end;local n=h:seek("end");h:close();return n
+end
 local function isSha(v)local s=tostring(v or "");return #s==64 and s:match("^[0-9A-Fa-f]+$")~=nil end
+local function quoteLua(v)return string.format("%q",tostring(v or ""))end
 local function waitSecond()
     if type(bmd)=="table"and type(bmd.wait)=="function"then bmd.wait(1000);return end
     local untilTime=os.clock()+1;while os.clock()<untilTime do end
@@ -48,11 +58,31 @@ local function loadPreparedManifest(p)
         local entry=byStem[tostring(clip.stem)];if not entry then fail("SYSTEMIC: prepared manifest missing clip: "..tostring(clip.stem))end
         if tostring(entry.canonical_original_path or "")==""or tostring(clip.canonical_source_path or "")==""then fail("SYSTEMIC: canonical original identity is missing: "..clip.stem)end
         if pathKey(entry.canonical_original_path)~=pathKey(clip.canonical_source_path)or tonumber(entry.frames)~=tonumber(clip.frames)or not numberEquals(entry.duration,clip.duration)then fail("SYSTEMIC: prepared manifest canonical original identity mismatch: "..clip.stem)end
-        if pathKey(entry.final_path)~=pathKey(clip.final_path)or entry.final_preflight_status~="ABSENT"then fail("SYSTEMIC: prepared manifest final-path policy mismatch: "..clip.stem)end
+        if pathKey(entry.final_path)~=pathKey(clip.final_path)then fail("SYSTEMIC: prepared manifest final-path identity mismatch: "..clip.stem)end
+        if entry.final_preflight_status~="ABSENT"and entry.final_preflight_status~="EXISTS"then fail("SYSTEMIC: prepared manifest final-path status is invalid: "..clip.stem)end
         clip.working_path=tostring(entry.working_path);clip.working_sha256=tostring(entry.working_sha256);clip.working_size=tonumber(entry.working_size)
         clip.working_preflight_status="PASS";clip.final_preflight_status=tostring(entry.final_preflight_status or "")
     end
     log("PREPARED_WORKING_MANIFEST=ALL_PASS")
+end
+local function loadResumeState()
+    local loader=loadfile(RESUME_STATE_PATH);if not loader then return {schema_version=1,grades={},outputs={}}end
+    local ok,result=pcall(loader)
+    if not ok or type(result)~="table"or tonumber(result.schema_version)~=1 then fail("SYSTEMIC: private production resume state is invalid.")end
+    result.grades=type(result.grades)=="table"and result.grades or{}
+    result.outputs=type(result.outputs)=="table"and result.outputs or{}
+    return result
+end
+local function saveResumeState(resume)
+    local lines={"return {","  schema_version = 1,","  grades = {"}
+    local gradeKeys={};for stem in pairs(resume.grades or{})do gradeKeys[#gradeKeys+1]=stem end;table.sort(gradeKeys)
+    for _,stem in ipairs(gradeKeys)do local g=resume.grades[stem];lines[#lines+1]="    ["..quoteLua(stem).."] = { timeline_name="..quoteLua(g.timeline_name)..", working_path="..quoteLua(g.working_path)..", working_sha256="..quoteLua(g.working_sha256)..", reference_drx_sha256="..quoteLua(g.reference_drx_sha256)..", node_count="..tostring(tonumber(g.node_count)or-1).." },"end
+    lines[#lines+1]="  },";lines[#lines+1]="  outputs = {"
+    local outputKeys={};for stem in pairs(resume.outputs or{})do outputKeys[#outputKeys+1]=stem end;table.sort(outputKeys)
+    for _,stem in ipairs(outputKeys)do local o=resume.outputs[stem];lines[#lines+1]="    ["..quoteLua(stem).."] = { path="..quoteLua(o.path)..", size="..tostring(tonumber(o.size)or-1)..", status="..quoteLua(o.status).." },"end
+    lines[#lines+1]="  }";lines[#lines+1]="}"
+    local h=io.open(RESUME_STATE_PATH,"wb");if not h then fail("SYSTEMIC: cannot write private production resume state.")end
+    h:write(table.concat(lines,"\n"),"\n");h:close()
 end
 local function validatedItems(raw,validator)
     local result={};if type(raw)~="table"then return result end
@@ -120,6 +150,10 @@ end
 local function renderQueueCount(project)
     return #renderJobs(project)
 end
+local function renderStatusText(status)
+    if type(status)=="table"then return tostring(status.JobStatus or status.jobStatus or"")end
+    return tostring(status or"")
+end
 local function clearCloneRenderQueue(project)
     local jobs=renderJobs(project)
     value("clone.render_queue_count_before",#jobs)
@@ -139,16 +173,37 @@ local function clearCloneRenderQueue(project)
     if remaining~=0 then fail("SYSTEMIC: production clone Render Queue is not empty after cleanup.")end
     log("PRODUCTION_CLONE_RENDER_QUEUE=EMPTY")
 end
+local function clearInactiveResumeRenderQueue(project)
+    if project:IsRenderingInProgress()==true then fail("SYSTEMIC: existing production project is still rendering.")end
+    local jobs=renderJobs(project);value("resume.render_queue_count_before",#jobs)
+    for index,job in ipairs(jobs)do
+        local callOk,statusInfo=pcall(function()return project:GetRenderJobStatus(tostring(job.JobId))end)
+        value("resume.render_job."..index..".status_call_ok",callOk)
+        value("resume.render_job."..index..".status_raw",callOk and renderStatusText(statusInfo)or statusInfo)
+    end
+    if #jobs>0 and project:DeleteAllRenderJobs()~=true then fail("SYSTEMIC: inactive resume Render Queue cleanup failed.")end
+    if renderQueueCount(project)~=0 then fail("SYSTEMIC: resume Render Queue is not empty after cleanup.")end
+    log("PRODUCTION_RESUME_RENDER_QUEUE=EMPTY")
+end
 local function bootstrap(resolve,manager,p)
     stage("Verified Reference Project Clone Bootstrap")
     if tostring(p.project.bootstrap_method)~="verified_reference_project_clone"then fail("SYSTEMIC: production bootstrap method is not verified_reference_project_clone.")end
     local referenceName=tostring(p.project.reference_project_name or "")
     if referenceName==""or referenceName==tostring(p.project.name)then fail("SYSTEMIC: invalid reference/production project identity declaration.")end
     if manager:GotoRootFolder()~=true then fail("Could not enter Project Library root folder.")end
-    local referenceVisible=false
+    local referenceVisible,productionVisible=false,false
     for _,name in ipairs(manager:GetProjectListInCurrentFolder()or{})do
         if tostring(name)==referenceName then referenceVisible=true end
-        if tostring(name)==p.project.name then fail("Unique production project already exists; overwrite/reuse forbidden.")end
+        if tostring(name)==p.project.name then productionVisible=true end
+    end
+    if productionVisible then
+        if p.project.allow_load_existing~=true or p.project.resume_existing_production~=true then fail("Existing production project is not explicitly authorized for safe resume.")end
+        local project=manager:LoadProject(p.project.name)
+        if not project or tostring(project:GetName())~=tostring(p.project.name)then fail("SYSTEMIC: exact existing production project could not be loaded.")end
+        verifyFormat(project,p)
+        verifyRcmReadOnly(project,"production_resume_rcm","PRODUCTION_RESUME_RCM=ALL_MATCH")
+        clearInactiveResumeRenderQueue(project)
+        state.project=p.project.name;log("REUSE_EXISTING_PRODUCTION_PROJECT");return project
     end
     if not referenceVisible then fail("SYSTEMIC: exact verified Reference Project is not visible in Project Library root.")end
     local current=manager:GetCurrentProject();if current then manager:SaveProject()end
@@ -179,9 +234,17 @@ local function importWorking(project,path)
     if pathKey(clipPath(imported[1]))~=pathKey(path)then fail("Imported MediaPoolItem path mismatch.")end
     return imported[1]
 end
-local function createAndGrade(project,clip,p)
+local function createAndGrade(project,clip,p,resume)
     local name="PROD_"..clip.stem.."_NEUTRAL_SAFE"
-    if findTimeline(project,name)then fail("Target timeline already exists: "..name)end
+    local existing=findTimeline(project,name)
+    if existing then
+        local attestation=resume.grades[clip.stem]
+        if type(attestation)~="table"or tostring(attestation.timeline_name)~=name or pathKey(attestation.working_path)~=pathKey(clip.working_path)or tostring(attestation.working_sha256)~=tostring(clip.working_sha256)or tostring(attestation.reference_drx_sha256)~=tostring(p.look.reference_drx_sha256)then fail("Existing production timeline lacks an exact private grade attestation: "..name)end
+        local item=exactTimelineItem(existing,clip.working_path);local graph=item:GetNodeGraph();local nodes=graph and tonumber(graph:GetNumNodes())or-1
+        if nodes<1 or nodes~=tonumber(attestation.node_count)then fail("Existing production timeline grade graph does not match its attestation: "..name)end
+        value("clip."..clip.stem..".resume_nodes",nodes);log("REUSE_EXISTING_PROD_TIMELINE="..clip.stem)
+        return existing,item:GetMediaPoolItem()
+    end
     local poolItem=importWorking(project,clip.working_path)
     local timeline=project:GetMediaPool():CreateTimelineFromClips(name,{poolItem});if not timeline then fail("CreateTimelineFromClips failed.")end
     local item=exactTimelineItem(timeline,clip.working_path)
@@ -194,13 +257,27 @@ local function createAndGrade(project,clip,p)
     local after=tonumber(graph:GetNumNodes())or-1
     value("clip."..clip.stem..".nodes_before",before);value("clip."..clip.stem..".nodes_after",after)
     if after<1 then fail("Applied grade produced no valid node graph.")end
+    resume.grades[clip.stem]={timeline_name=name,working_path=clip.working_path,working_sha256=clip.working_sha256,reference_drx_sha256=p.look.reference_drx_sha256,node_count=after};saveResumeState(resume)
     return timeline,poolItem
 end
 local function presetVisible(project,name)
     for _,v in ipairs(project:GetRenderPresetList()or{})do if tostring(v)==name then return true end end
     return false
 end
-local function renderOne(project,manager,clip,timeline,p)
+local function waitForStableOutput(path,p,stem)
+    local required=tonumber(p.production.output_stability_checks)or 3
+    local interval=tonumber(p.production.output_stability_interval_seconds)or 2
+    local timeout=tonumber(p.production.output_stability_timeout_seconds)or 120
+    local started=os.time();local last=nil;local stable=0
+    while os.difftime(os.time(),started)<=timeout do
+        local size=fileSize(path);value("clip."..stem..".output_size_observed",size or"MISSING")
+        if size and size>0 then if size==last then stable=stable+1 else stable=0;last=size end else stable=0;last=nil end
+        if stable>=required then log("RESOLVE_RENDER_OUTPUT_READY="..stem);return size end
+        for _=1,interval do waitSecond()end
+    end
+    fail("Rendered output did not become present and size-stable before timeout.")
+end
+local function renderOne(project,manager,clip,timeline,p,resume)
     if renderQueueCount(project)~=0 then fail("Render queue must be empty before each clip.")end
     if not presetVisible(project,p.render_preset.name)then fail("SYSTEMIC: verified render preset is not visible.")end
     if project:SetCurrentTimeline(timeline)~=true then fail("SetCurrentTimeline failed.")end
@@ -215,25 +292,39 @@ local function renderOne(project,manager,clip,timeline,p)
     local started=os.time();while project:IsRenderingInProgress()==true do
         if os.difftime(os.time(),started)>tonumber(p.production.render_timeout_seconds)then fail("Render timeout.")end;waitSecond()
     end
-    local status=project:GetRenderJobStatus(job)or{};local name=tostring(status.JobStatus or status.jobStatus or"")
-    value("clip."..clip.stem..".render_status",name)
-    if normalize(name)~="complete"and normalize(name)~="completed"then fail("Render Job did not complete.")end
-    if project:DeleteRenderJob(tostring(job))~=true then fail("Completed render job cleanup failed.")end
+    local statusCallOk,status=pcall(function()return project:GetRenderJobStatus(job)end)
+    local name=statusCallOk and renderStatusText(status)or""
+    value("clip."..clip.stem..".render_status_call_ok",statusCallOk);value("clip."..clip.stem..".render_status_raw",statusCallOk and name or status)
+    log("RENDER_JOB_STATUS=DIAGNOSTIC_ONLY")
+    local outputSize=waitForStableOutput(clip.final_path,p,clip.stem)
+    resume.outputs[clip.stem]={path=clip.final_path,size=outputSize,status="RENDER_COMPLETED_PENDING_EXTERNAL_POSTFLIGHT"};saveResumeState(resume)
+    if project:DeleteRenderJob(tostring(job))~=true then
+        value("clip."..clip.stem..".DeleteRenderJob",false)
+        if project:DeleteAllRenderJobs()~=true or renderQueueCount(project)~=0 then fail("SYSTEMIC: completed render job cleanup failed.")end
+    end
     return job
 end
+local function verifiedFinal(p,clip)
+    local verified=type(p.production.verified_finals)=="table"and p.production.verified_finals[clip.stem]or nil
+    if type(verified)~="table"or tostring(verified.status)~="PASS"then return false end
+    if pathKey(verified.path)~=pathKey(clip.final_path)or not isSha(verified.sha256)or tonumber(verified.size or 0)<=0 or tonumber(verified.frames)~=tonumber(clip.frames)or not numberEquals(verified.duration,clip.duration)then fail("SYSTEMIC: external verified Final attestation mismatch: "..clip.stem)end
+    local actual=fileSize(clip.final_path);if actual~=tonumber(verified.size)then fail("SYSTEMIC: externally verified Final size changed: "..clip.stem)end
+    return true
+end
 local function outputPolicy(p,clip)
-    if clip.final_preflight_status~="ABSENT"then fail("SYSTEMIC: external final-path preflight is not ABSENT for "..clip.stem)end
-    if fileSize(clip.final_path)~=nil then fail("SYSTEMIC: final target exists; overwrite forbidden: "..clip.final_path)end
+    if verifiedFinal(p,clip)then log("SKIP_VERIFIED_FINAL="..clip.stem);return"SKIP_VERIFIED_FINAL"end
+    if fileSize(clip.final_path)~=nil then fail("Unverified final target exists; overwrite forbidden: "..clip.final_path)end
     return "NEW"
 end
-local function processClip(project,manager,p,clip)
+local function processClip(project,manager,p,clip,resume)
     stage("Output Policy")
     local policy=outputPolicy(p,clip);value("clip."..clip.stem..".output_policy",policy)
+    if policy=="SKIP_VERIFIED_FINAL"then state.skipped=state.skipped+1;state.success=state.success+1;state.clips[#state.clips+1]=clip.stem.." | EXTERNAL_FINAL_PASS | "..tostring(clip.final_path);return end
     if clip.working_preflight_status~="PASS"then fail("SYSTEMIC: clip is not externally prepared: "..clip.stem)end
     stage("Resolve Import and Grade")
-    local timeline=createAndGrade(project,clip,p)
+    local timeline=createAndGrade(project,clip,p,resume)
     stage("Master Render")
-    renderOne(project,manager,clip,timeline,p)
+    renderOne(project,manager,clip,timeline,p,resume)
     stage("Resolve Render Complete / External Postflight Pending")
     value("clip."..clip.stem..".external_postflight","PENDING")
     state.success=state.success+1
@@ -264,13 +355,14 @@ local function main()
     if p.production.external_artifact_preflight_status~="PASS"then fail("SYSTEMIC: external DRX/render-preset artifact preflight is missing.")end
     if p.look.reference_drx_sha256~=p.production.prepared_reference_drx_sha256 or p.render_preset.sha256~=p.production.prepared_render_preset_sha256 then fail("SYSTEMIC: prepared artifact SHA-256 attestations do not match runtime assets.")end
     loadPreparedManifest(p)
+    local resume=loadResumeState()
     local appObject=rawget(_G,"app");local resolve=appObject and appObject:GetResolve()or nil;local manager=resolve and resolve:GetProjectManager()or nil
     if not manager then fail("SYSTEMIC: Resolve internal objects unavailable.")end
     local project=bootstrap(resolve,manager,p)
     for index,clip in ipairs(p.production.clips)do
         local subBatchSize=tonumber(p.production.sub_batch_size) or 10
         value("batch.index",index);value("batch.sub_batch",math.floor((index-1)/subBatchSize)+1)
-        local clipOk,clipError=xpcall(function()processClip(project,manager,p,clip)end,traceback)
+        local clipOk,clipError=xpcall(function()processClip(project,manager,p,clip,resume)end,traceback)
         if not clipOk then
             local message=tostring(clipError)
             local class=state.stage
