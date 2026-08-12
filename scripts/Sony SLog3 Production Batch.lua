@@ -23,13 +23,11 @@ local function pathKey(v)return string.lower(tostring(v or ""):gsub("\\","/"))en
 local function contains(v,part)return normalize(v):find(normalize(part),1,true)~=nil end
 local function numberEquals(a,b)local x,y=tonumber(a),tonumber(b);return x and y and math.abs(x-y)<0.001 end
 local function fileSize(path)
-    if type(bmd)=="table"and type(bmd.readdir)=="function"then
-        local ok,entries=pcall(function()return bmd.readdir(path)end)
-        if ok and type(entries)=="table"then
-            for _,entry in ipairs(entries)do if type(entry)=="table"and entry.IsDir~=true and tonumber(entry.Size)then return tonumber(entry.Size)end end
-        end
-    end
-    local h=io.open(path,"rb");if not h then return nil end;local n=h:seek("end");h:close();return n
+    if type(bmd)~="table"or type(bmd.readdir)~="function"then return nil end
+    local ok,entries=pcall(function()return bmd.readdir(path)end)
+    if not ok or type(entries)~="table"then return nil end
+    for _,entry in ipairs(entries)do if type(entry)=="table"and entry.IsDir~=true and tonumber(entry.Size)then return tonumber(entry.Size)end end
+    return nil
 end
 local function isSha(v)local s=tostring(v or "");return #s==64 and s:match("^[0-9A-Fa-f]+$")~=nil end
 local function quoteLua(v)return string.format("%q",tostring(v or ""))end
