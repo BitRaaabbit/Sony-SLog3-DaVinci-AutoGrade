@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('ArtifactGate', 'PrepareDirectories', 'InspectFinal', 'Transcode', 'VerifyFinal', 'DeleteWorking', 'DiskGate', 'PublishReport')]
+    [ValidateSet('ArtifactGate', 'InspectArtifact', 'PrepareSeedDirectory', 'PrepareDirectories', 'InspectFinal', 'Transcode', 'VerifyFinal', 'DeleteWorking', 'DiskGate', 'PublishReport')]
     [string]$Action,
 
     [Parameter(Mandatory = $true)]
@@ -232,6 +232,23 @@ function Invoke-ArtifactGate {
     Write-Result ([ordered]@{status = 'PASS'; stage = 'artifact_gate'; artifact_path = $path; artifact_size = $item.Length; artifact_sha256 = $hash})
 }
 
+function Invoke-InspectArtifact {
+    $path = [string]$script:Config.artifact_path
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Artifact missing: $path" }
+    $item = Get-Item -LiteralPath $path
+    if ($item.Length -le 0) { throw "Artifact is empty: $path" }
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    Write-Result ([ordered]@{status = 'PASS'; stage = 'inspect_artifact'; artifact_path = $path; artifact_size = $item.Length; artifact_sha256 = $hash})
+}
+
+function Invoke-PrepareSeedDirectory {
+    $path = [string]$script:Config.seed_dir
+    if ([string]::IsNullOrWhiteSpace($path)) { throw 'Production seed directory declaration is empty.' }
+    [IO.Directory]::CreateDirectory($path) | Out-Null
+    if (-not (Test-Path -LiteralPath $path -PathType Container)) { throw "Could not create production seed directory: $path" }
+    Write-Result ([ordered]@{status = 'PASS'; stage = 'prepare_seed_directory'; seed_dir = $path})
+}
+
 function Invoke-PublishReport {
     $source = [string]$script:Config.source_report
     $destination = [string]$script:Config.destination_report
@@ -248,6 +265,8 @@ try {
     if ([string]::IsNullOrWhiteSpace([string]$script:Config.result_path)) { throw 'Missing result_path.' }
     switch ($Action) {
         'ArtifactGate' { Invoke-ArtifactGate }
+        'InspectArtifact' { Invoke-InspectArtifact }
+        'PrepareSeedDirectory' { Invoke-PrepareSeedDirectory }
         'PrepareDirectories' { Invoke-PrepareDirectories }
         'InspectFinal' { Invoke-InspectFinal }
         'Transcode' { Invoke-Transcode }

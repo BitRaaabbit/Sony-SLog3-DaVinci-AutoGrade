@@ -99,34 +99,7 @@ local function verifyFormat(project,p)
         {"timelineResolutionWidth",p.batch.width},{"timelineResolutionHeight",p.batch.height}
     })do local actual=project:GetSetting(check[1]);value("project."..check[1],actual);if not numberEquals(actual,check[2])then fail("Project format mismatch: "..check[1])end end
 end
-local function setReadCompare(project,key,candidates,validator,label)
-    for _,candidate in ipairs(candidates)do
-        local setCallOk,setResult=pcall(function()return project:SetSetting(key,candidate)end)
-        local readCallOk,actual=pcall(function()return project:GetSetting(key)end)
-        value("setting."..key..".requested",candidate)
-        value("setting."..key..".set_call_ok",setCallOk)
-        value("setting."..key..".set_return",setResult)
-        value("setting."..key..".read_call_ok",readCallOk)
-        value("setting."..key..".read_back",actual)
-        local matched=readCallOk and validator(actual)
-        value("setting."..key..".compare",matched and "MATCH"or"MISMATCH")
-        if matched then return actual end
-    end;fail("SET/READ BACK/COMPARE failed for "..label.."; actual="..tostring(project:GetSetting(key)))
-end
-local function configureRcm(project)
-    setReadCompare(project,"colorScienceMode",{"davinciYRGBColorManagedv2","davinciYRGBColorManaged"},function(v)return contains(v,"color")and contains(v,"managed")end,"DaVinci YRGB Color Managed")
-    setReadCompare(project,"rcmPresetMode",{"Custom"},function(v)return contains(v,"custom")end,"RCM Custom")
-    setReadCompare(project,"isAutoColorManage",{"0","false"},function(v)return tostring(v)=="0"or normalize(v)=="false"end,"Automatic Color Management OFF")
-    setReadCompare(project,"separateColorSpaceAndGamma",{"1"},function(v)return tostring(v)=="1"or normalize(v)=="true"end,"Separate Color Space and Gamma")
-    setReadCompare(project,"colorSpaceInput",{"Sony S-Gamut3.Cine","S-Gamut3.Cine"},function(v)return contains(v,"s-gamut3.cine")end,"Input Sony S-Gamut3.Cine")
-    setReadCompare(project,"colorSpaceInputGamma",{"S-Log3"},function(v)return contains(v,"s-log3")end,"Input S-Log3")
-    setReadCompare(project,"colorSpaceTimeline",{"DaVinci WG","DaVinci Wide Gamut"},function(v)return contains(v,"davinci")and(contains(v,"wg")or contains(v,"widegamut"))end,"Timeline DaVinci Wide Gamut")
-    setReadCompare(project,"colorSpaceTimelineGamma",{"DaVinci Intermediate"},function(v)return contains(v,"intermediate")end,"Timeline DaVinci Intermediate")
-    setReadCompare(project,"colorSpaceOutput",{"Rec.709"},function(v)return contains(v,"rec.709")or contains(v,"rec709")end,"Output Rec.709")
-    setReadCompare(project,"colorSpaceOutputGamma",{"Gamma 2.4","Gamma2.4"},function(v)return contains(v,"2.4")end,"Output Gamma 2.4")
-    log("RCM=ALL_MATCH")
-end
-local function verifyFinalRcm(project)
+local function verifyRcmReadOnly(project,prefix,successLine)
     local checks={
         {"colorScienceMode",function(v)return contains(v,"color")and contains(v,"managed")end},
         {"rcmPresetMode",function(v)return contains(v,"custom")end},
@@ -143,34 +116,76 @@ local function verifyFinalRcm(project)
         local key,validator=entry[1],entry[2]
         local readCallOk,actual=pcall(function()return project:GetSetting(key)end)
         local matched=readCallOk and validator(actual)
-        value("production_rcm_final."..key..".read_call_ok",readCallOk)
-        value("production_rcm_final."..key..".read_back",actual)
-        value("production_rcm_final."..key..".compare",matched and "MATCH"or"MISMATCH")
-        if not matched then fail("Production final RCM verification failed for "..key.."; actual="..tostring(actual))end
+        value(prefix.."."..key..".read_call_ok",readCallOk)
+        value(prefix.."."..key..".read_back",actual)
+        value(prefix.."."..key..".compare",matched and "MATCH"or"MISMATCH")
+        if not matched then fail("Read-only RCM verification failed for "..key.."; actual="..tostring(actual))end
     end
-    log("PRODUCTION_RCM_FINAL_VERIFY=ALL_MATCH")
+    log(successLine)
+end
+local function renderJobs(project)
+    local jobs={}
+    for _,job in ipairs(project:GetRenderJobList()or{})do
+        if type(job)=="table"and tostring(job.JobId or "")~=""then jobs[#jobs+1]=job end
+    end
+    return jobs
 end
 local function renderQueueCount(project)
-    local count=0;for _,job in ipairs(project:GetRenderJobList()or{})do if type(job)=="table"or type(job)=="userdata"then count=count+1 end end;return count
+    return #renderJobs(project)
+end
+local function clearCloneRenderQueue(project)
+    local jobs=renderJobs(project)
+    value("clone.render_queue_count_before",#jobs)
+    if project:IsRenderingInProgress()==true then fail("SYSTEMIC: cloned project reports rendering in progress.")end
+    for index,job in ipairs(jobs)do
+        local statusInfo=project:GetRenderJobStatus(tostring(job.JobId))or{}
+        local status=tostring(statusInfo.JobStatus or statusInfo.jobStatus or job.JobStatus or job.jobStatus or "")
+        value("clone.render_job."..index..".id",job.JobId)
+        value("clone.render_job."..index..".status",status)
+        local normalized=normalize(status)
+        if normalized:find("rendering",1,true)or normalized:find("active",1,true)or normalized:find("inprogress",1,true)then
+            fail("SYSTEMIC: cloned project contains an active Render Job.")
+        end
+    end
+    if #jobs>0 and project:DeleteAllRenderJobs()~=true then fail("SYSTEMIC: DeleteAllRenderJobs failed in production clone.")end
+    local remaining=renderQueueCount(project);value("clone.render_queue_count_after",remaining)
+    if remaining~=0 then fail("SYSTEMIC: production clone Render Queue is not empty after cleanup.")end
+    log("PRODUCTION_CLONE_RENDER_QUEUE=EMPTY")
 end
 local function bootstrap(resolve,manager,p)
-    stage("Production Project Bootstrap")
-    runWorker(p,"ArtifactGate",p.production.clips[1],{artifact_path=p.project.template_path,expected_size=p.project.template_size,expected_sha256=p.project.template_sha256})
+    stage("Verified Reference Project Clone Bootstrap")
+    if tostring(p.project.bootstrap_method)~="verified_reference_project_clone"then fail("SYSTEMIC: production bootstrap method is not verified_reference_project_clone.")end
+    local referenceName=tostring(p.project.reference_project_name or "")
+    if referenceName==""or referenceName==tostring(p.project.name)then fail("SYSTEMIC: invalid reference/production project identity declaration.")end
     if manager:GotoRootFolder()~=true then fail("Could not enter Project Library root folder.")end
+    local referenceVisible=false
     for _,name in ipairs(manager:GetProjectListInCurrentFolder()or{})do
+        if tostring(name)==referenceName then referenceVisible=true end
         if tostring(name)==p.project.name then fail("Unique production project already exists; overwrite/reuse forbidden.")end
     end
+    if not referenceVisible then fail("SYSTEMIC: exact verified Reference Project is not visible in Project Library root.")end
     local current=manager:GetCurrentProject();if current then manager:SaveProject()end
-    if manager:ImportProject(p.project.template_path,p.project.name)~=true then fail("ImportProject failed.")end
+    local reference=manager:LoadProject(referenceName)
+    if not reference or tostring(reference:GetName())~=referenceName then fail("SYSTEMIC: could not load exact verified Reference Project.")end
+    verifyFormat(reference,p)
+    verifyRcmReadOnly(reference,"reference_project_rcm","REFERENCE_PROJECT_RCM=VERIFIED")
+    if manager:SaveProject()~=true then fail("SYSTEMIC: SaveProject failed for verified Reference Project.")end
+    runWorker(p,"PrepareSeedDirectory",p.production.clips[1],{seed_dir=p.production.seed_dir})
+    local seedPath=tostring(p.production.seed_dir).."/SonySLog3_Verified_Production_Seed_"..os.date("%Y%m%d_%H%M%S")..".drp"
+    if fileSize(seedPath)~=nil then fail("SYSTEMIC: production seed DRP collision.")end
+    local exportOk=manager:ExportProject(referenceName,seedPath,true)
+    value("production_seed.export_return",exportOk);value("production_seed.path",seedPath)
+    if exportOk~=true or not fileSize(seedPath)or fileSize(seedPath)<=0 then fail("SYSTEMIC: verified Reference Project ExportProject failed.")end
+    local seed=runWorker(p,"InspectArtifact",p.production.clips[1],{artifact_path=seedPath})
+    value("production_seed.size",seed.artifact_size);value("production_seed.sha256",seed.artifact_sha256)
+    if manager:GotoRootFolder()~=true then fail("Could not return to Project Library root folder.")end
+    if manager:ImportProject(seedPath,p.project.name)~=true then fail("ImportProject failed for verified production seed.")end
     if not manager:LoadProject(p.project.name)then fail("LoadProject failed after DRP import.")end
     local project=manager:GetCurrentProject();if not project or tostring(project:GetName())~=p.project.name then fail("Production project identity mismatch.")end
     verifyFormat(project,p)
-    local root=project:GetMediaPool():GetRootFolder()
-    local rootClips=validatedItems(root:GetClipList()or{},function(item)return type(item)=="userdata"end)
-    local rootFolders=validatedItems(root:GetSubFolderList()or{},function(item)return type(item)=="userdata"end)
-    if #rootClips~=0 or #rootFolders~=0 or tonumber(project:GetTimelineCount())~=0 or renderQueueCount(project)~=0 then fail("Imported production template is not blank.")end
-    configureRcm(project);verifyFormat(project,p);verifyFinalRcm(project)
-    if manager:SaveProject()~=true then fail("SaveProject failed after production bootstrap.")end
+    verifyRcmReadOnly(project,"production_rcm_inherited","PRODUCTION_RCM_INHERITED_VERIFY=ALL_MATCH")
+    clearCloneRenderQueue(project)
+    if manager:SaveProject()~=true then fail("SaveProject failed after production clone bootstrap.")end
     state.project=p.project.name;return project
 end
 local function importWorking(project,path)
@@ -180,7 +195,7 @@ local function importWorking(project,path)
     return imported[1]
 end
 local function createAndGrade(project,clip,p)
-    local name="GRADE_"..clip.stem.."_NEUTRAL_SAFE"
+    local name="PROD_"..clip.stem.."_NEUTRAL_SAFE"
     if findTimeline(project,name)then fail("Target timeline already exists: "..name)end
     local poolItem=importWorking(project,clip.working_path)
     local timeline=project:GetMediaPool():CreateTimelineFromClips(name,{poolItem});if not timeline then fail("CreateTimelineFromClips failed.")end

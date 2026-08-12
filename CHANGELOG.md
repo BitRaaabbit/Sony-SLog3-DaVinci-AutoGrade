@@ -1,6 +1,6 @@
 # Changelog
 
-- Fixed production RCM bootstrap drift by restoring the Diagnostic-proven separate gamut/gamma sequence, readback-authoritative setting gates, and a complete pre-transcode final RCM verification.
+- Replaced fresh-project production RCM setters with a verified Reference Project export/import clone, complete read-only verification before and after cloning, isolated clone Render Queue cleanup, and a protected `PROD_` timeline namespace.
 
 ## Unreleased — generic Sony S-Log3 workflow
 

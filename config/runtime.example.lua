@@ -16,6 +16,10 @@ return {
     },
     project = {
         name = "Sony_SLog3_Diagnostic_Project",
+        -- Production may instead use "verified_reference_project_clone":
+        -- load this exact machine-verified project, read back Project Format
+        -- and RCM, export/import a unique clone, then repeat read-only checks.
+        reference_project_name = "Sony_SLog3_Verified_Reference_Project",
         allow_create = true,
         allow_load_existing = false,
         -- Set true only to resume an exact, previously validated one-clip

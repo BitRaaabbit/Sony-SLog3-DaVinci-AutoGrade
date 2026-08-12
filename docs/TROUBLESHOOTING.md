@@ -82,7 +82,7 @@ If `ExportStills()` returns true but the exact requested DRX path is absent, ins
 
 Read the private production log and per-clip worker result. Disk, DRP, DRX, Render Preset, RCM, and Resolve-object failures are systemic and stop before the next clip. A media-specific transcode, import, grade, render, or postflight failure is `REVIEW_NEEDED`; retain its working media and continue unless the same failure class repeats consecutively. Cleanup is eligible only after Render Job completion plus ffprobe and SHA-256 PASS, and only for a validated file inside the declared temporary working root.
 
-If production reads a combined value such as `Rec.709 Gamma 2.4` from `colorSpaceInput` and rejects `Sony S-Gamut3.Cine`, audit sequence drift first. `separateColorSpaceAndGamma=1` must be read back before setting standalone gamut and gamma fields. Do not reuse the partially configured project; preserve it for diagnosis and bootstrap a uniquely named project from the verified blank DRP.
+If a fresh project rejects an independently verified RCM setter even after the correct separate-gamut/gamma sequence, stop treating it as a value-discovery problem. Preserve the partial project as evidence. Production should clone the exact machine-verified Reference Project through `ExportProject`/`ImportProject`, then accept only complete read-only Project Format and RCM matches before transcoding. Never repair inherited RCM with setters.
 
 ## Render codecs appear empty
 
