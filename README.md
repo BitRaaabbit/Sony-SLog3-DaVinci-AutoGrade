@@ -4,6 +4,12 @@ A conservative, safety-first DaVinci Resolve workflow for media reliably confirm
 
 This branch is a development refactor. Do not treat it as a stable production release until the regression gates in `docs/REGRESSION_TESTS.md` pass on real footage.
 
+## Related workflow: game trailers
+
+For gameplay footage, narrative editing, captions, focus masks, branding and layered sound, use the separate [Resolve Game Trailer Workflow](https://github.com/BitRaaabbit/resolve-game-trailer-workflow). Start with its [README](https://github.com/BitRaaabbit/resolve-game-trailer-workflow/blob/workflow/initial-review/README.md) and [Codex project brief](https://github.com/BitRaaabbit/resolve-game-trailer-workflow/blob/workflow/initial-review/START_HERE.md).
+
+This repository remains dedicated to reliably identified Sony S-Gamut3.Cine / S-Log3 grading. The two workflows share diagnostic and verification methods, not color transforms or runtime configuration. Do not apply this repository's Sony transform to ordinary gameplay recordings; inspect their actual color properties separately. The trailer tools validate synthetic mechanisms and do not automate an entire edit or guarantee Resolve compatibility.
+
 ## Verified host environment
 
 - DaVinci Resolve 20.3.2 Free on Windows

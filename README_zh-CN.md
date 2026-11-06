@@ -4,6 +4,12 @@
 
 当前分支属于开发重构版。在 `docs/REGRESSION_TESTS.md` 的真实素材验证全部通过前，不应视为稳定生产版本。
 
+## 相关工作流：游戏宣传片
+
+游戏录屏的叙事剪辑、字幕、聚焦蒙版、品牌和分层声音请使用独立的 [Resolve Game Trailer Workflow](https://github.com/BitRaaabbit/resolve-game-trailer-workflow)，从 [README](https://github.com/BitRaaabbit/resolve-game-trailer-workflow/blob/workflow/initial-review/README.md) 和 [Codex 新项目启动指令](https://github.com/BitRaaabbit/resolve-game-trailer-workflow/blob/workflow/initial-review/START_HERE.md) 开始。
+
+本仓库继续专用于已可靠确认的 Sony S-Gamut3.Cine / S-Log3 调色。两套流程共享诊断与验证方法，不共享色彩变换或 runtime 配置；普通游戏录屏须单独核对色彩属性，不能直接套用本仓库的 Sony 变换。宣传片仓库的小工具验证合成机制，不是整片自动剪辑器，也不保证所有 Resolve 环境兼容。
+
 ## 已验证环境
 
 - Windows、DaVinci Resolve 20.3.2 免费版
